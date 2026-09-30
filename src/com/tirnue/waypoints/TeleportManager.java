@@ -42,12 +42,12 @@ public class TeleportManager {
         UUID pid = player.getUniqueId();
         
         if (!from.isTrusted(pid) && !from.isOwner(pid)) {
-            player.sendMessage(config.getMessage("not_trusted"));
+            player.sendMessage(config.getPrefix() + config.getMessage("no-permission"));
             return false;
         }
 
         if (isOnCooldown(pid)) {
-            player.sendMessage(config.getMessage("on_cooldown").replace("%time%", String.valueOf(getCooldownRemaining(pid))));
+            player.sendMessage(config.getPrefix() + config.getMessage("teleport-cooldown").replace("{seconds}", String.valueOf(getCooldownRemaining(pid))));
             return false;
         }
 
@@ -62,20 +62,22 @@ public class TeleportManager {
                     cost = config.getEconomyBaseCost() + (distance / 100.0) * config.getEconomyPer100Blocks();
                     cost = Math.min(cost, config.getEconomyMaxCost());
                     if (!econ.has(player, cost)) {
-                        player.sendMessage(config.getMessage("not_enough_money"));
+                        player.sendMessage(config.getPrefix() + config.getMessage("not-enough-money").replace("{cost}", String.format("%.2f", cost)));
                         return false;
                     }
                 }
             } else if ("XP".equalsIgnoreCase(type)) {
                 if (player.getLevel() < config.getXpLevelsPerWarp()) {
-                    player.sendMessage(config.getMessage("not_enough_xp"));
+                    player.sendMessage(config.getPrefix() + config.getMessage("not-enough-xp").replace("{levels}", String.valueOf(config.getXpLevelsPerWarp())));
                     return false;
                 }
             } else if ("ITEM".equalsIgnoreCase(type)) {
                 Material mat = config.getCostItemType();
                 int amount = config.getCostItemAmount();
                 if (!player.getInventory().containsAtLeast(new ItemStack(mat), amount)) {
-                    player.sendMessage(config.getMessage("not_enough_items"));
+                    player.sendMessage(config.getPrefix() + config.getMessage("not-enough-items")
+                            .replace("{amount}", String.valueOf(amount))
+                            .replace("{item}", mat.name()));
                     return false;
                 }
             }
@@ -95,14 +97,14 @@ public class TeleportManager {
 
                 if (config.isCancelOnMove()) {
                     if (player.getLocation().distanceSquared(teleport.startLocation) > config.getMoveThreshold() * config.getMoveThreshold()) {
-                        cancelTeleport(pid, config.getMessage("teleport_cancelled_moved"));
+                        cancelTeleport(pid, config.getPrefix() + config.getMessage("teleport-cancelled-move"));
                         return;
                     }
                 }
 
                 if (config.isCancelOnDamage()) {
                     if (player.getHealth() < teleport.initialHealth) {
-                        cancelTeleport(pid, config.getMessage("teleport_cancelled_damage"));
+                        cancelTeleport(pid, config.getPrefix() + config.getMessage("teleport-cancelled-damage"));
                         return;
                     }
                 }
@@ -112,31 +114,33 @@ public class TeleportManager {
 
                 teleport.ticksElapsed++;
                 double progress = (double) teleport.ticksElapsed / teleport.totalTicks;
-                
-                // Channeling FX
-                double radius = 2.0 - (progress * 1.7); // 2.0 to 0.3
-                int particles = 4 + (int)(progress * 11); // 4 to 15
                 Location pLoc = player.getLocation();
-                for (int i = 0; i < particles; i++) {
-                    double angle = 2 * Math.PI * i / particles + (teleport.ticksElapsed * 0.2);
-                    double x = Math.cos(angle) * radius;
-                    double z = Math.sin(angle) * radius;
-                    pLoc.getWorld().spawnParticle(config.getChannelingParticle(), pLoc.clone().add(x, 0.1 + progress * 2.0, z), 1, 0, 0, 0, 0);
+                
+                // Channeling FX - particles every 2 ticks to halve cost
+                if (teleport.ticksElapsed % 2 == 0) {
+                    double radius = 2.0 - (progress * 1.7);
+                    int particles = 4 + (int)(progress * 11);
+                    for (int i = 0; i < particles; i++) {
+                        double angle = 2 * Math.PI * i / particles + (teleport.ticksElapsed * 0.2);
+                        double px = pLoc.getX() + Math.cos(angle) * radius;
+                        double pz = pLoc.getZ() + Math.sin(angle) * radius;
+                        double py = pLoc.getY() + 0.1 + progress * 2.0;
+                        pLoc.getWorld().spawnParticle(config.getChannelingParticle(), px, py, pz, 1, 0, 0, 0, 0);
+                    }
                 }
 
+                // Sound every 10 ticks
                 if (teleport.ticksElapsed % 10 == 0) {
                     player.playSound(pLoc, config.getChannelingSound(), (float)(0.3 + progress * 0.7), (float)(0.5 + progress * 1.5));
                 }
 
-                // Action Bar
-                int bars = (int)(progress * 10);
-                StringBuilder barStr = new StringBuilder();
-                for (int i = 0; i < 10; i++) {
-                    barStr.append(i < bars ? "■" : "□");
+                // Action bar every 4 ticks (still looks smooth, 75% less string alloc)
+                if (teleport.ticksElapsed % 4 == 0 || teleport.ticksElapsed >= teleport.totalTicks) {
+                    int bars = (int)(progress * 10);
+                    double timeRemaining = (teleport.totalTicks - teleport.ticksElapsed) / 20.0;
+                    String msg = "\u00a7bWarping: \u00a7f[\u00a7a" + "\u25a0".repeat(bars) + "\u00a77" + "\u25a1".repeat(10 - bars) + "\u00a7f] \u00a7e" + String.format("%.1fs", timeRemaining);
+                    player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(msg));
                 }
-                double timeRemaining = (teleport.totalTicks - teleport.ticksElapsed) / 20.0;
-                String msg = ChatColor.translateAlternateColorCodes('&', "&bWarping: &f[" + barStr + "&f] &e" + String.format("%.1fs", timeRemaining));
-                player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(msg));
 
                 if (teleport.ticksElapsed >= teleport.totalTicks) {
                     completeTeleport(pid, teleport);

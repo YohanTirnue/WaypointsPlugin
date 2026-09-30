@@ -40,17 +40,22 @@ public class WaypointManager {
                 System.currentTimeMillis()
         );
         waypoints.put(waypoint.getId(), waypoint);
-        save();
+        saveAsync();
         return waypoint;
     }
 
     public void deleteWaypoint(UUID waypointId) {
         Waypoint removed = waypoints.remove(waypointId);
         if (removed != null) {
+            // Despawn display entities to prevent entity leak
+            if (plugin instanceof TirnueWaypoints tw && tw.getWaypointRenderer() != null) {
+                tw.getWaypointRenderer().despawnWaypoint(waypointId);
+            }
+            // Sever all links from other waypoints pointing to this one
             for (Waypoint w : waypoints.values()) {
                 w.getLinkedWaypointIds().remove(waypointId);
             }
-            save();
+            saveAsync();
         }
     }
 
@@ -109,7 +114,7 @@ public class WaypointManager {
         if (a != null && b != null) {
             a.addLink(wpB);
             b.addLink(wpA);
-            save();
+            saveAsync();
         }
     }
 
@@ -118,14 +123,14 @@ public class WaypointManager {
         Waypoint b = getWaypoint(wpB);
         if (a != null) a.removeLink(wpB);
         if (b != null) b.removeLink(wpA);
-        save();
+        saveAsync();
     }
 
     public void trustPlayer(UUID waypointId, UUID playerUUID) {
         Waypoint wp = getWaypoint(waypointId);
         if (wp != null) {
             wp.addTrust(playerUUID);
-            save();
+            saveAsync();
         }
     }
 
@@ -133,7 +138,7 @@ public class WaypointManager {
         Waypoint wp = getWaypoint(waypointId);
         if (wp != null) {
             wp.removeTrust(playerUUID);
-            save();
+            saveAsync();
         }
     }
 
@@ -142,6 +147,30 @@ public class WaypointManager {
     }
 
     public void save() {
+        YamlConfiguration yaml = buildYaml();
+        try {
+            yaml.save(dataFile);
+        } catch (IOException e) {
+            plugin.getLogger().severe("Could not save waypoints to " + dataFile.getName());
+        }
+    }
+
+    /**
+     * Async save: builds YAML snapshot on main thread, writes to disk off-thread.
+     * Used for all in-game mutations to avoid TPS drops from disk I/O.
+     */
+    public void saveAsync() {
+        YamlConfiguration yaml = buildYaml();
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                yaml.save(dataFile);
+            } catch (IOException e) {
+                plugin.getLogger().severe("Could not save waypoints to " + dataFile.getName());
+            }
+        });
+    }
+
+    private YamlConfiguration buildYaml() {
         YamlConfiguration yaml = new YamlConfiguration();
         for (Waypoint wp : waypoints.values()) {
             String key = wp.getId().toString();
@@ -163,12 +192,7 @@ public class WaypointManager {
             yaml.set(key + ".linkedWaypointIds", linked);
             yaml.set(key + ".createdAt", wp.getCreatedAt());
         }
-
-        try {
-            yaml.save(dataFile);
-        } catch (IOException e) {
-            plugin.getLogger().severe("Could not save waypoints to " + dataFile.getName());
-        }
+        return yaml;
     }
 
     public void load() {

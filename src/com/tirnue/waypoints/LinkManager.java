@@ -138,6 +138,20 @@ public class LinkManager {
     public void saveUsedTokens() {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("tokens", new ArrayList<>(usedTokens));
+        // Async write to avoid TPS drops
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                yaml.save(tokensFile);
+            } catch (IOException e) {
+                plugin.getLogger().severe("Could not save used tokens to " + tokensFile.getName());
+            }
+        });
+    }
+
+    /** Synchronous save for use during onDisable (scheduler unavailable). */
+    public void saveUsedTokensSync() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("tokens", new ArrayList<>(usedTokens));
         try {
             yaml.save(tokensFile);
         } catch (IOException e) {

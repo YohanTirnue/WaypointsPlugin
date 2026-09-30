@@ -189,6 +189,7 @@ public class WaypointGUI {
             return;
         }
 
+        if (!event.getCurrentItem().hasItemMeta() || !event.getCurrentItem().getItemMeta().hasDisplayName()) return;
         String itemName = ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
 
         switch (session.type) {
@@ -311,5 +312,13 @@ public class WaypointGUI {
             player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aWaypoint renamed to " + newName));
             Bukkit.getScheduler().runTask(plugin, () -> openManagementMenu(player, wp));
         }
+    }
+
+    /**
+     * Clean up all GUI state for a player (called on quit to prevent memory leaks).
+     */
+    public void cleanupPlayer(UUID playerId) {
+        sessions.remove(playerId);
+        pendingRenames.remove(playerId);
     }
 }

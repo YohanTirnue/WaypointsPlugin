@@ -52,10 +52,10 @@ public class TirnueWaypoints extends JavaPlugin {
             waypointRenderer.despawnAll();
         }
         if (waypointManager != null) {
-            waypointManager.save();
+            waypointManager.save(); // sync save - scheduler is dead during disable
         }
         if (linkManager != null) {
-            linkManager.saveUsedTokens();
+            linkManager.saveUsedTokensSync(); // sync save - scheduler is dead during disable
         }
         getLogger().info("TirnueWaypoints disabled!");
     }

@@ -3,10 +3,12 @@ package com.tirnue.waypoints;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -44,37 +46,47 @@ public class WaypointListener implements Listener {
                     } else if (wp.isTrusted(player.getUniqueId()) || wp.isGlobal()) {
                         plugin.getWaypointGUI().openTravelMenu(player, wp);
                     } else {
-                        player.sendMessage(plugin.getConfigManager().getMessage("no_permission"));
+                        player.sendMessage(plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("no-permission"));
                     }
                 }
             }
         }
     }
 
-    @EventHandler
+    // HIGH fix: Check if player is teleporting FIRST before doing any math
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
-        if (event.getFrom().distanceSquared(event.getTo()) > 0.01) {
-            Player player = event.getPlayer();
-            if (plugin.getTeleportManager().isCurrentlyTeleporting(player.getUniqueId())) {
-                plugin.getTeleportManager().cancelTeleport(player.getUniqueId(), "You moved!");
-            }
+        Player player = event.getPlayer();
+        // Early exit — skip all math if player isn't teleporting (vast majority of calls)
+        if (!plugin.getTeleportManager().isCurrentlyTeleporting(player.getUniqueId())) return;
+
+        // Only cancel if they actually moved position (not just head rotation)
+        if (event.getFrom().getBlockX() != event.getTo().getBlockX()
+                || event.getFrom().getBlockY() != event.getTo().getBlockY()
+                || event.getFrom().getBlockZ() != event.getTo().getBlockZ()) {
+            plugin.getTeleportManager().cancelTeleport(player.getUniqueId(),
+                    plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("teleport-cancelled-move"));
         }
     }
 
     @EventHandler
     public void onEntityDamage(EntityDamageEvent event) {
-        if (event.getEntity() instanceof Player) {
-            Player player = (Player) event.getEntity();
-            if (plugin.getTeleportManager().isCurrentlyTeleporting(player.getUniqueId())) {
-                plugin.getTeleportManager().cancelTeleport(player.getUniqueId(), "You took damage!");
-            }
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (plugin.getTeleportManager().isCurrentlyTeleporting(player.getUniqueId())) {
+            plugin.getTeleportManager().cancelTeleport(player.getUniqueId(),
+                    plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("teleport-cancelled-damage"));
         }
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
-        plugin.getTeleportManager().cancelTeleport(event.getPlayer().getUniqueId(), "Disconnected");
-        // GUI cleanup handled by close event typically, but safe here too
+        UUID pid = event.getPlayer().getUniqueId();
+        // Cancel active teleports
+        plugin.getTeleportManager().cancelTeleport(pid, "offline");
+        // Cleanup cooldown entry to prevent memory leak
+        plugin.getTeleportManager().clearCooldown(pid);
+        // Cleanup pending GUI renames
+        plugin.getWaypointGUI().cleanupPlayer(pid);
     }
 
     @EventHandler
@@ -108,26 +120,45 @@ public class WaypointListener implements Listener {
             Waypoint wp = plugin.getWaypointManager().getWaypointNear(player.getLocation(), 5.0);
             if (wp != null && wp.isOwner(player.getUniqueId())) {
                 if (plugin.getLinkManager().redeemLedger(player, wp, hand)) {
-                    player.sendMessage("§aLink established!");
-                    hand.setAmount(hand.getAmount() - 1);
+                    player.sendMessage(plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("link-established"));
+                }
+            }
+        }
+    }
+
+    // CRITICAL fix: Use math-based chunk coordinate comparison instead of Location.getChunk()
+    // Location.getChunk() forces chunk loading which causes cascading lag
+    @EventHandler
+    public void onChunkLoad(ChunkLoadEvent event) {
+        Chunk chunk = event.getChunk();
+        int cx = chunk.getX();
+        int cz = chunk.getZ();
+        String worldName = chunk.getWorld().getName();
+
+        for (Waypoint wp : plugin.getWaypointManager().getAllWaypoints()) {
+            if (!wp.getWorldName().equals(worldName)) continue;
+            int wpCx = ((int) wp.getX()) >> 4;
+            int wpCz = ((int) wp.getZ()) >> 4;
+            if (wpCx == cx && wpCz == cz) {
+                if (!plugin.getWaypointRenderer().isSpawned(wp.getId())) {
+                    plugin.getWaypointRenderer().spawnWaypoint(wp);
                 }
             }
         }
     }
 
     @EventHandler
-    public void onChunkLoad(ChunkLoadEvent event) {
-        for (Waypoint wp : plugin.getWaypointManager().getAllWaypoints()) {
-            if (wp.toBukkitLocation().getChunk().equals(event.getChunk())) {
-                plugin.getWaypointRenderer().spawnWaypoint(wp);
-            }
-        }
-    }
-
-    @EventHandler
     public void onChunkUnload(ChunkUnloadEvent event) {
+        Chunk chunk = event.getChunk();
+        int cx = chunk.getX();
+        int cz = chunk.getZ();
+        String worldName = chunk.getWorld().getName();
+
         for (Waypoint wp : plugin.getWaypointManager().getAllWaypoints()) {
-            if (wp.toBukkitLocation().getChunk().equals(event.getChunk())) {
+            if (!wp.getWorldName().equals(worldName)) continue;
+            int wpCx = ((int) wp.getX()) >> 4;
+            int wpCz = ((int) wp.getZ()) >> 4;
+            if (wpCx == cx && wpCz == cz) {
                 plugin.getWaypointRenderer().despawnWaypoint(wp.getId());
             }
         }
