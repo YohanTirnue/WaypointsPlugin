@@ -1,1 +1,3 @@
-bin/\n*.jar\nbackup/
+bin/
+*.jar
+backup/
