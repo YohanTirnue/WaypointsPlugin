@@ -187,6 +187,8 @@ public class WaypointManager {
             yaml.set(key + ".yaw", wp.getYaw());
             yaml.set(key + ".pitch", wp.getPitch());
             yaml.set(key + ".isGlobal", wp.isGlobal());
+            yaml.set(key + ".particleType", wp.getParticleType());
+            yaml.set(key + ".crystalMaterial", wp.getCrystalMaterial());
             List<String> trusted = new ArrayList<>();
             for (UUID u : wp.getTrustedPlayers()) trusted.add(u.toString());
             yaml.set(key + ".trustedPlayers", trusted);
@@ -227,6 +229,8 @@ public class WaypointManager {
                 float yaw = (float) yaml.getDouble(key + ".yaw", 0.0);
                 float pitch = (float) yaml.getDouble(key + ".pitch", 0.0);
                 boolean isGlobal = yaml.getBoolean(key + ".isGlobal", false);
+                String particleType = yaml.getString(key + ".particleType", "ENCHANT");
+                String crystalMaterial = yaml.getString(key + ".crystalMaterial", "AMETHYST_SHARD");
                 
                 Set<UUID> trustedPlayers = new HashSet<>();
                 for (String uStr : yaml.getStringList(key + ".trustedPlayers")) {
@@ -241,6 +245,8 @@ public class WaypointManager {
                 long createdAt = yaml.getLong(key + ".createdAt", System.currentTimeMillis());
 
                 Waypoint wp = new Waypoint(id, name, ownerUUID, ownerName, worldName, x, y, z, yaw, pitch, isGlobal, trustedPlayers, linkedWaypointIds, createdAt);
+                wp.setParticleType(particleType);
+                wp.setCrystalMaterial(crystalMaterial);
                 
                 if (yaml.contains(key + ".activityLog")) {
                     for (String iStr : yaml.getConfigurationSection(key + ".activityLog").getKeys(false)) {

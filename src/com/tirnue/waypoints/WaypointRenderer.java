@@ -30,6 +30,7 @@ public class WaypointRenderer {
     private final ConfigManager config;
     // Store direct entity references instead of UUIDs to avoid O(N) Bukkit.getEntity() lookups
     private final Map<UUID, WaypointEntities> spawnedEntities = new HashMap<>();
+    private final Map<UUID, Waypoint> waypointDataCache = new HashMap<>();
     private final NamespacedKey wpIdKey;
     private BukkitTask animationTask;
     // Pre-allocate reusable Quaternionf to avoid GC pressure in animation loop
@@ -64,8 +65,15 @@ public class WaypointRenderer {
 
         // 2. ItemDisplay crystal
         Location crystalLoc = loc.clone().add(0, 1.5, 0);
+        org.bukkit.Material parsedMat;
+        try {
+            parsedMat = org.bukkit.Material.valueOf(wp.getCrystalMaterial());
+        } catch (IllegalArgumentException e) {
+            parsedMat = config.getCoreItemVisual();
+        }
+        final org.bukkit.Material crystalMat = parsedMat;
         ItemDisplay crystal = world.spawn(crystalLoc, ItemDisplay.class, entity -> {
-            entity.setItemStack(new ItemStack(config.getCoreItemVisual()));
+            entity.setItemStack(new ItemStack(crystalMat));
             entity.setPersistent(false);
             entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wp.getId().toString());
         });
@@ -91,10 +99,12 @@ public class WaypointRenderer {
 
         // Store direct entity references — no more Bukkit.getEntity() lookups needed
         spawnedEntities.put(wp.getId(), new WaypointEntities(base, crystal, label, interaction));
+        waypointDataCache.put(wp.getId(), wp);
     }
 
     public void despawnWaypoint(UUID waypointId) {
         WaypointEntities entities = spawnedEntities.remove(waypointId);
+        waypointDataCache.remove(waypointId);
         if (entities != null) {
             safeRemove(entities.base);
             safeRemove(entities.crystal);
@@ -117,6 +127,7 @@ public class WaypointRenderer {
             safeRemove(entities.interaction);
         }
         spawnedEntities.clear();
+        waypointDataCache.clear();
     }
 
     public void updateLabel(UUID waypointId, String newName, String ownerName) {
@@ -137,6 +148,30 @@ public class WaypointRenderer {
         return spawnedEntities.containsKey(waypointId);
     }
 
+    public void tickBeaconEffects() {
+        for (Map.Entry<UUID, WaypointEntities> entry : spawnedEntities.entrySet()) {
+            UUID wpId = entry.getKey();
+            Waypoint wp = waypointDataCache.get(wpId);
+            if (wp == null) continue;
+            
+            Location loc = entry.getValue().base.getLocation();
+            if (loc.getWorld() == null) continue;
+            
+            for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
+                if (player.getWorld().equals(loc.getWorld()) && player.getLocation().distanceSquared(loc) <= 2500) {
+                    if (wp.isOwner(player.getUniqueId()) || wp.isTrusted(player.getUniqueId())) {
+                        for (int i = 0; i < 3; i++) {
+                            double offsetX = (Math.random() - 0.5) * 0.2;
+                            double offsetY = 2.5 + Math.random() * 2.5;
+                            double offsetZ = (Math.random() - 0.5) * 0.2;
+                            player.spawnParticle(org.bukkit.Particle.SOUL_FIRE_FLAME, loc.clone().add(offsetX, offsetY, offsetZ), 1, 0, 0, 0, 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     public void startAnimationTask() {
         if (animationTask != null && !animationTask.isCancelled()) return;
 
@@ -145,13 +180,20 @@ public class WaypointRenderer {
             @Override
             public void run() {
                 ticks += 2;
+                if (ticks % 10 == 0) {
+                    tickBeaconEffects();
+                }
                 float rotationAngle = (float) Math.toRadians((config.getCrystalRotationSpeed() * ticks) % 360);
                 float bobOffset = (float) (Math.sin(Math.toRadians(ticks * 5)) * config.getCrystalBobAmplitude());
                 boolean doParticles = config.isAmbientParticles() && (ticks % 6 == 0); // particles every 6 ticks instead of every 2
 
                 // Snapshot to avoid ConcurrentModification if chunk unload removes entries
-                List<WaypointEntities> snapshot = new ArrayList<>(spawnedEntities.values());
-                for (WaypointEntities entities : snapshot) {
+                List<Map.Entry<UUID, WaypointEntities>> snapshot = new ArrayList<>(spawnedEntities.entrySet());
+                for (Map.Entry<UUID, WaypointEntities> entry : snapshot) {
+                    WaypointEntities entities = entry.getValue();
+                    UUID wpId = entry.getKey();
+                    Waypoint wp = waypointDataCache.get(wpId);
+                    
                     ItemDisplay crystal = entities.crystal;
                     if (crystal == null || !crystal.isValid()) continue;
 
@@ -162,10 +204,16 @@ public class WaypointRenderer {
                     t.getTranslation().set(0, bobOffset, 0);
                     crystal.setTransformation(t);
 
-                    if (doParticles) {
+                    if (doParticles && wp != null) {
                         Location loc = crystal.getLocation();
                         loc.add(0, bobOffset, 0);
-                        loc.getWorld().spawnParticle(config.getAmbientParticle(), loc, 2, 0.2, 0.2, 0.2, 0.01);
+                        org.bukkit.Particle p;
+                        try {
+                            p = org.bukkit.Particle.valueOf(wp.getParticleType());
+                        } catch (Exception e) {
+                            p = config.getAmbientParticle();
+                        }
+                        loc.getWorld().spawnParticle(p, loc, 2, 0.2, 0.2, 0.2, 0.01);
                     }
                 }
             }

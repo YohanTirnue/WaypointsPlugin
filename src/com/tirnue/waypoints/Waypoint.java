@@ -26,6 +26,8 @@ public class Waypoint {
     private Set<UUID> trustedPlayers;
     private Set<UUID> linkedWaypointIds;
     private long createdAt;
+    private String particleType = "ENCHANT";
+    private String crystalMaterial = "AMETHYST_SHARD";
     private final List<ActivityEntry> activityLog = new ArrayList<>();
 
     public static class ActivityEntry {
@@ -116,6 +118,12 @@ public class Waypoint {
     
     public long getCreatedAt() { return createdAt; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
+
+    public String getParticleType() { return particleType; }
+    public void setParticleType(String particleType) { this.particleType = particleType; }
+
+    public String getCrystalMaterial() { return crystalMaterial; }
+    public void setCrystalMaterial(String crystalMaterial) { this.crystalMaterial = crystalMaterial; }
 
     public boolean isOwner(UUID playerUUID) {
         return ownerUUID != null && ownerUUID.equals(playerUUID);

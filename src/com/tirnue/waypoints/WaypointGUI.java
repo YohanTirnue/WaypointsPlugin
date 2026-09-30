@@ -21,7 +21,7 @@ public class WaypointGUI {
     private final Map<UUID, GUISession> sessions = new HashMap<>();
     private final Map<UUID, UUID> pendingRenames = new HashMap<>();
 
-    public enum GUIType { TRAVEL, MANAGEMENT, TRUST, LINKS, REDEEM_CONFIRM, ACTIVITY }
+    public enum GUIType { TRAVEL, MANAGEMENT, TRUST, LINKS, REDEEM_CONFIRM, ACTIVITY, CUSTOMIZE }
 
     public static class GUISession {
         public GUIType type;
@@ -135,13 +135,48 @@ public class WaypointGUI {
         inv.setItem(11, createItem(Material.PLAYER_HEAD, "&a👥 Manage Trust", "&7" + wp.getTrustedPlayers().size() + " trusted players"));
         inv.setItem(12, createItem(Material.IRON_BARS, "&b\uD83D\uDD17 Connected Waypoints", "&7" + wp.getLinkedWaypointIds().size() + " active links"));
         inv.setItem(13, createItem(Material.BOOK, "&6📋 Activity Log", "&7View recent warp activity"));
-        inv.setItem(14, createItem(Material.PAPER, "&e✦ Generate Guest Pass", "&7Create a single-use warp token"));
-        inv.setItem(15, createItem(Material.WRITABLE_BOOK, "&d📜 Generate Link Ledger"));
-        inv.setItem(16, createItem(Material.BOOK, "&a📥 Redeem Link Ledger", "&7Hold a ledger and click"));
-        inv.setItem(17, createItem(Material.TNT, "&c💥 Destroy Waypoint", "&7Shift-click to confirm"));
+        inv.setItem(14, createItem(Material.PAINTING, "&d🎨 Customize Appearance", "&7Change particles & crystal"));
+        inv.setItem(15, createItem(Material.PAPER, "&e✦ Generate Guest Pass", "&7Create a single-use warp token"));
+        inv.setItem(16, createItem(Material.WRITABLE_BOOK, "&d📜 Generate Link Ledger"));
+        inv.setItem(17, createItem(Material.BOOK, "&a📥 Redeem Link Ledger", "&7Hold a ledger and click"));
+        inv.setItem(26, createItem(Material.TNT, "&c💥 Destroy Waypoint", "&7Shift-click to confirm"));
         inv.setItem(22, createItem(Material.ARROW, "&7Close"));
 
         sessions.put(player.getUniqueId(), new GUISession(GUIType.MANAGEMENT, wp.getId(), 1));
+        player.openInventory(inv);
+    }
+
+    public void openCustomizeMenu(Player player, Waypoint wp) {
+        Inventory inv = Bukkit.createInventory(null, 27, deserializeTitle("&d✦ Customize - " + wp.getName()));
+        
+        Material[] particles = {Material.ENDER_PEARL, Material.BLAZE_POWDER, Material.AMETHYST_SHARD, Material.MAGMA_CREAM, Material.SOUL_LANTERN, Material.END_ROD, Material.RED_DYE, Material.HONEYCOMB, Material.CHERRY_LEAVES};
+        String[] partNames = {"ENCHANT", "PORTAL", "REVERSE_PORTAL", "FLAME", "SOUL_FIRE_FLAME", "END_ROD", "HEART", "DRIPPING_HONEY", "CHERRY_LEAVES"};
+        for(int i = 0; i < 9; i++) {
+            ItemStack item = createItem(particles[i], "&a" + partNames[i], "&7Click to select");
+            if (partNames[i].equals(wp.getParticleType())) {
+                item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.UNBREAKING, 1);
+                ItemMeta meta = item.getItemMeta();
+                meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
+                item.setItemMeta(meta);
+            }
+            inv.setItem(i, item);
+        }
+
+        Material[] crystals = {Material.AMETHYST_SHARD, Material.DIAMOND, Material.EMERALD, Material.NETHER_STAR, Material.END_CRYSTAL, Material.ENDER_EYE, Material.HEART_OF_THE_SEA, Material.PRISMARINE_CRYSTALS, Material.GLOWSTONE_DUST};
+        for(int i = 0; i < 9; i++) {
+            ItemStack item = createItem(crystals[i], "&b" + crystals[i].name(), "&7Click to select");
+            if (crystals[i].name().equals(wp.getCrystalMaterial())) {
+                item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.UNBREAKING, 1);
+                ItemMeta meta = item.getItemMeta();
+                meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
+                item.setItemMeta(meta);
+            }
+            inv.setItem(i + 9, item);
+        }
+        
+        inv.setItem(22, createItem(Material.ARROW, "&7Back"));
+        
+        sessions.put(player.getUniqueId(), new GUISession(GUIType.CUSTOMIZE, wp.getId(), 1));
         player.openInventory(inv);
     }
 
@@ -271,15 +306,17 @@ public class WaypointGUI {
                     openLinksMenu(player, wp);
                 } else if (event.getSlot() == 13) { // Activity Log
                     openActivityMenu(player, wp);
-                } else if (event.getSlot() == 14) { // Guest Pass
+                } else if (event.getSlot() == 14) { // Customize Appearance
+                    openCustomizeMenu(player, wp);
+                } else if (event.getSlot() == 15) { // Guest Pass
                     ItemStack pass = plugin.getLinkManager().generateGuestPass(wp);
                     player.getInventory().addItem(pass);
                     player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aGuest pass generated."));
-                } else if (event.getSlot() == 15) { // Generate Ledger
+                } else if (event.getSlot() == 16) { // Generate Ledger
                     ItemStack ledger = plugin.getLinkManager().generateLedger(wp);
                     player.getInventory().addItem(ledger);
                     player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aLink ledger generated."));
-                } else if (event.getSlot() == 16) { // Redeem Ledger
+                } else if (event.getSlot() == 17) { // Redeem Ledger
                     ItemStack hand = player.getInventory().getItemInMainHand();
                     if (plugin.getLinkManager().isLedger(hand)) {
                         if (plugin.getLinkManager().redeemLedger(player, wp, hand)) {
@@ -290,7 +327,7 @@ public class WaypointGUI {
                     } else {
                         player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cYou must be holding a Link Ledger to redeem it."));
                     }
-                } else if (event.getSlot() == 17) { // Destroy
+                } else if (event.getSlot() == 26) { // Destroy
                     if (event.isShiftClick()) {
                         player.closeInventory();
                         plugin.getWaypointManager().deleteWaypoint(wp.getId());
@@ -305,6 +342,23 @@ public class WaypointGUI {
             case ACTIVITY:
                 if (event.getSlot() == 49) {
                     openManagementMenu(player, wp);
+                }
+                break;
+            case CUSTOMIZE:
+                if (event.getSlot() == 22) {
+                    openManagementMenu(player, wp);
+                } else if (event.getSlot() >= 0 && event.getSlot() < 9) {
+                    String[] partNames = {"ENCHANT", "PORTAL", "REVERSE_PORTAL", "FLAME", "SOUL_FIRE_FLAME", "END_ROD", "HEART", "DRIPPING_HONEY", "CHERRY_LEAVES"};
+                    wp.setParticleType(partNames[event.getSlot()]);
+                    plugin.getWaypointManager().saveAsync();
+                    openCustomizeMenu(player, wp);
+                } else if (event.getSlot() >= 9 && event.getSlot() < 18) {
+                    Material[] crystals = {Material.AMETHYST_SHARD, Material.DIAMOND, Material.EMERALD, Material.NETHER_STAR, Material.END_CRYSTAL, Material.ENDER_EYE, Material.HEART_OF_THE_SEA, Material.PRISMARINE_CRYSTALS, Material.GLOWSTONE_DUST};
+                    wp.setCrystalMaterial(crystals[event.getSlot() - 9].name());
+                    plugin.getWaypointManager().saveAsync();
+                    plugin.getWaypointRenderer().despawnWaypoint(wp.getId());
+                    plugin.getWaypointRenderer().spawnWaypoint(wp);
+                    openCustomizeMenu(player, wp);
                 }
                 break;
             case TRUST:
