@@ -180,6 +180,10 @@ public class TeleportManager {
             // Arrival FX
             player.getWorld().spawnParticle(config.getArrivalParticle(), dest.clone().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
             player.getWorld().playSound(dest, config.getArrivalSound(), 1.0f, 1.0f);
+
+            // Log activity on both waypoints
+            teleport.from.addActivity(player.getName(), player.getUniqueId(), "WARP_FROM", teleport.to.getName());
+            teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
         }
 
         // Set cooldown

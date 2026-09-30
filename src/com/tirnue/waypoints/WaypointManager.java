@@ -15,11 +15,14 @@ public class WaypointManager {
     private final ConfigManager configManager;
     private final Map<UUID, Waypoint> waypoints = new HashMap<>();
     private final File dataFile;
+    private final Map<UUID, Set<UUID>> playerFavorites = new HashMap<>();
+    private final File favoritesFile;
 
     public WaypointManager(JavaPlugin plugin, ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
         this.dataFile = new File(plugin.getDataFolder(), "waypoints.yml");
+        this.favoritesFile = new File(plugin.getDataFolder(), "favorites.yml");
     }
 
     public Waypoint createWaypoint(Player owner, String name, Location loc) {
@@ -191,6 +194,17 @@ public class WaypointManager {
             for (UUID u : wp.getLinkedWaypointIds()) linked.add(u.toString());
             yaml.set(key + ".linkedWaypointIds", linked);
             yaml.set(key + ".createdAt", wp.getCreatedAt());
+            
+            List<Waypoint.ActivityEntry> activities = wp.getActivityLog();
+            for (int i = 0; i < activities.size() && i < 20; i++) {
+                Waypoint.ActivityEntry entry = activities.get(i);
+                String actKey = key + ".activityLog." + i;
+                yaml.set(actKey + ".playerName", entry.getPlayerName());
+                yaml.set(actKey + ".playerUUID", entry.getPlayerUUID().toString());
+                yaml.set(actKey + ".action", entry.getAction());
+                yaml.set(actKey + ".timestamp", entry.getTimestamp());
+                yaml.set(actKey + ".destinationName", entry.getDestinationName());
+            }
         }
         return yaml;
     }
@@ -227,9 +241,74 @@ public class WaypointManager {
                 long createdAt = yaml.getLong(key + ".createdAt", System.currentTimeMillis());
 
                 Waypoint wp = new Waypoint(id, name, ownerUUID, ownerName, worldName, x, y, z, yaw, pitch, isGlobal, trustedPlayers, linkedWaypointIds, createdAt);
+                
+                if (yaml.contains(key + ".activityLog")) {
+                    for (String iStr : yaml.getConfigurationSection(key + ".activityLog").getKeys(false)) {
+                        String actKey = key + ".activityLog." + iStr;
+                        String pName = yaml.getString(actKey + ".playerName");
+                        UUID pUUID = UUID.fromString(yaml.getString(actKey + ".playerUUID"));
+                        String act = yaml.getString(actKey + ".action");
+                        long ts = yaml.getLong(actKey + ".timestamp");
+                        String dest = yaml.getString(actKey + ".destinationName");
+                        wp.getActivityLog().add(new Waypoint.ActivityEntry(pName, pUUID, act, ts, dest));
+                    }
+                }
                 waypoints.put(id, wp);
             } catch (Exception e) {
                 plugin.getLogger().warning("Failed to load waypoint with key " + key + ": " + e.getMessage());
+            }
+        }
+        loadFavorites();
+    }
+
+    public void toggleFavorite(UUID playerUUID, UUID waypointId) {
+        Set<UUID> favs = playerFavorites.computeIfAbsent(playerUUID, k -> new HashSet<>());
+        if (favs.contains(waypointId)) {
+            favs.remove(waypointId);
+        } else {
+            favs.add(waypointId);
+        }
+        saveFavorites();
+    }
+
+    public boolean isFavorite(UUID playerUUID, UUID waypointId) {
+        return playerFavorites.getOrDefault(playerUUID, Collections.emptySet()).contains(waypointId);
+    }
+
+    public Set<UUID> getFavorites(UUID playerUUID) {
+        return playerFavorites.getOrDefault(playerUUID, Collections.emptySet());
+    }
+
+    public void saveFavorites() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        for (Map.Entry<UUID, Set<UUID>> entry : playerFavorites.entrySet()) {
+            List<String> list = new ArrayList<>();
+            for (UUID w : entry.getValue()) list.add(w.toString());
+            yaml.set(entry.getKey().toString(), list);
+        }
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                yaml.save(favoritesFile);
+            } catch (IOException e) {
+                plugin.getLogger().severe("Could not save favorites to " + favoritesFile.getName());
+            }
+        });
+    }
+
+    public void loadFavorites() {
+        if (!favoritesFile.exists()) return;
+        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(favoritesFile);
+        playerFavorites.clear();
+        for (String key : yaml.getKeys(false)) {
+            try {
+                UUID playerUUID = UUID.fromString(key);
+                Set<UUID> favs = new HashSet<>();
+                for (String wStr : yaml.getStringList(key)) {
+                    favs.add(UUID.fromString(wStr));
+                }
+                playerFavorites.put(playerUUID, favs);
+            } catch (Exception e) {
+                plugin.getLogger().warning("Failed to load favorites for " + key);
             }
         }
     }

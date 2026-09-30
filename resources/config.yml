@@ -148,3 +148,80 @@ messages:
   ledger-generated: "&a✦ Link receipt created for &e{waypoint}&a!"
   ledger-invalid: "&c✖ This ledger is invalid or has already been used."
   waypoint-destroyed-notify: "&c✦ {waypoint} has been dismantled. Connection lost."
+  favorite-added: "&a★ {waypoint} added to favorites!"
+  favorite-removed: "&7☆ {waypoint} removed from favorites."
+  guest-pass-generated: "&a✦ Guest pass created for {waypoint}!"
+  guest-pass-invalid: "&c✖ This guest pass is invalid or expired."
+  guest-pass-used: "&a✦ Guest pass redeemed! One-time warp granted."
+  activity-empty: "&7No recent activity."
+
+# ------------------------------------------
+# Guest Pass (Single-Use Teleport Token)
+# ------------------------------------------
+guest-pass:
+  # Material for the guest pass item
+  material: PAPER
+  # Display name
+  name: "&e✦ Waypoint Guest Pass"
+  # Max guest passes a player can generate per waypoint (0 = unlimited)
+  max-per-waypoint: 10
+
+# ------------------------------------------
+# Waypoint Decay (Inactive Owner Cleanup)
+# ------------------------------------------
+decay:
+  # Enable waypoint decay for inactive owners
+  enabled: false
+  # Days of owner inactivity before waypoint starts decaying
+  inactive-days: 30
+  # Days after decay starts before auto-destruction
+  decay-grace-days: 7
+  # Notify owner on login if their waypoints are decaying
+  notify-on-login: true
+
+# ------------------------------------------
+# Waypoint Tiers / Upgrades
+# ------------------------------------------
+tiers:
+  enabled: false
+  # Tier definitions: name -> max links, max trusted
+  basic:
+    max-links: 3
+    max-trusted: 5
+    teleport-speed-multiplier: 1.0
+  advanced:
+    max-links: 6
+    max-trusted: 10
+    teleport-speed-multiplier: 0.8
+    upgrade-cost-economy: 5000
+    upgrade-cost-items:
+      DIAMOND: 16
+      AMETHYST_SHARD: 32
+  master:
+    max-links: 12
+    max-trusted: 25
+    teleport-speed-multiplier: 0.5
+    upgrade-cost-economy: 25000
+    upgrade-cost-items:
+      NETHERITE_INGOT: 4
+      NETHER_STAR: 1
+
+# ------------------------------------------
+# Rent-a-Waypoint
+# ------------------------------------------
+rent:
+  # Allow waypoint owners to charge per-use fees
+  enabled: false
+  # Maximum fee an owner can set
+  max-fee: 1000.0
+  # Percentage the server takes as tax (0-100)
+  server-tax-percent: 10
+
+# ------------------------------------------  
+# World Link Restrictions
+# ------------------------------------------
+world-restrictions:
+  enabled: false
+  # Block links between these world pairs
+  blocked-pairs:
+    - "aeternum_frost:aeternum_heat"

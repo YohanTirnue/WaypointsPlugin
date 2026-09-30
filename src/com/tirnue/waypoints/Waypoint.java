@@ -4,7 +4,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -24,6 +26,37 @@ public class Waypoint {
     private Set<UUID> trustedPlayers;
     private Set<UUID> linkedWaypointIds;
     private long createdAt;
+    private final List<ActivityEntry> activityLog = new ArrayList<>();
+
+    public static class ActivityEntry {
+        private final String playerName;
+        private final UUID playerUUID;
+        private final String action;
+        private final long timestamp;
+        private final String destinationName;
+
+        public ActivityEntry(String playerName, UUID playerUUID, String action, long timestamp, String destinationName) {
+            this.playerName = playerName;
+            this.playerUUID = playerUUID;
+            this.action = action;
+            this.timestamp = timestamp;
+            this.destinationName = destinationName;
+        }
+
+        public String getPlayerName() { return playerName; }
+        public UUID getPlayerUUID() { return playerUUID; }
+        public String getAction() { return action; }
+        public long getTimestamp() { return timestamp; }
+        public String getDestinationName() { return destinationName; }
+
+        public String getFormattedTime() {
+            long diff = System.currentTimeMillis() - timestamp;
+            if (diff < 60000) return (diff / 1000) + "s ago";
+            if (diff < 3600000) return (diff / 60000) + "m ago";
+            if (diff < 86400000) return (diff / 3600000) + "h ago";
+            return (diff / 86400000) + "d ago";
+        }
+    }
 
     public Waypoint(UUID id, String name, UUID ownerUUID, String ownerName, String worldName, double x, double y, double z, float yaw, float pitch, boolean isGlobal, Set<UUID> trustedPlayers, Set<UUID> linkedWaypointIds, long createdAt) {
         this.id = id != null ? id : UUID.randomUUID();
@@ -130,5 +163,16 @@ public class Waypoint {
         double dy = this.y - other.y;
         double dz = this.z - other.z;
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    public void addActivity(String playerName, UUID playerUUID, String action, String destinationName) {
+        activityLog.add(0, new ActivityEntry(playerName, playerUUID, action, System.currentTimeMillis(), destinationName));
+        if (activityLog.size() > 20) {
+            activityLog.remove(activityLog.size() - 1);
+        }
+    }
+
+    public List<ActivityEntry> getActivityLog() {
+        return activityLog;
     }
 }

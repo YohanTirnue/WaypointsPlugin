@@ -29,6 +29,9 @@ public class LinkManager {
     private final NamespacedKey KEY_LEDGER_MARKER;
     private final NamespacedKey KEY_LEDGER_WAYPOINT_ID;
     private final NamespacedKey KEY_LEDGER_TOKEN;
+    private final NamespacedKey KEY_GUEST_PASS_MARKER;
+    private final NamespacedKey KEY_GUEST_PASS_WP_ID;
+    private final NamespacedKey KEY_GUEST_PASS_TOKEN;
 
     private final Set<String> usedTokens = new HashSet<>();
     private final File tokensFile;
@@ -41,6 +44,10 @@ public class LinkManager {
         this.KEY_LEDGER_MARKER = new NamespacedKey(plugin, "tirnue_ledger");
         this.KEY_LEDGER_WAYPOINT_ID = new NamespacedKey(plugin, "tirnue_ledger_wp");
         this.KEY_LEDGER_TOKEN = new NamespacedKey(plugin, "tirnue_ledger_token");
+
+        this.KEY_GUEST_PASS_MARKER = new NamespacedKey(plugin, "tirnue_guest_pass");
+        this.KEY_GUEST_PASS_WP_ID = new NamespacedKey(plugin, "tirnue_guest_wp");
+        this.KEY_GUEST_PASS_TOKEN = new NamespacedKey(plugin, "tirnue_guest_token");
 
         this.tokensFile = new File(plugin.getDataFolder(), "used_tokens.yml");
         loadUsedTokens();
@@ -134,6 +141,103 @@ public class LinkManager {
 
         return true;
     }
+
+    public ItemStack generateGuestPass(Waypoint source) {
+        Material mat = Material.valueOf(plugin.getConfig().getString("guest-pass.material", "PAPER").toUpperCase());
+        ItemStack pass = new ItemStack(mat);
+        ItemMeta meta = pass.getItemMeta();
+        if (meta == null) return pass;
+
+        String name = ChatColor.translateAlternateColorCodes('&', plugin.getConfig().getString("guest-pass.name", "&e✦ Waypoint Guest Pass"));
+        meta.setDisplayName(name);
+
+        List<String> lore = new ArrayList<>();
+        lore.add(ChatColor.GRAY + "Attuned to: " + ChatColor.AQUA + ChatColor.translateAlternateColorCodes('&', source.getName()));
+        lore.add(ChatColor.GRAY + "Owner: " + ChatColor.WHITE + source.getOwnerName());
+        lore.add("");
+        lore.add(ChatColor.YELLOW + "Single-use teleport");
+        meta.setLore(lore);
+
+        meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
+        meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        pdc.set(KEY_GUEST_PASS_MARKER, PersistentDataType.BYTE, (byte) 1);
+        pdc.set(KEY_GUEST_PASS_WP_ID, PersistentDataType.STRING, source.getId().toString());
+        
+        String token = UUID.randomUUID().toString();
+        pdc.set(KEY_GUEST_PASS_TOKEN, PersistentDataType.STRING, token);
+
+        pass.setItemMeta(meta);
+        return pass;
+    }
+
+    public boolean isGuestPass(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        ItemMeta meta = item.getItemMeta();
+        return meta.getPersistentDataContainer().has(KEY_GUEST_PASS_MARKER, PersistentDataType.BYTE);
+    }
+
+    public UUID getGuestPassWaypointId(ItemStack item) {
+        if (!isGuestPass(item)) return null;
+        String idStr = item.getItemMeta().getPersistentDataContainer().get(KEY_GUEST_PASS_WP_ID, PersistentDataType.STRING);
+        if (idStr != null) {
+            try {
+                return UUID.fromString(idStr);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    public String getGuestPassToken(ItemStack item) {
+        if (!isGuestPass(item)) return null;
+        return item.getItemMeta().getPersistentDataContainer().get(KEY_GUEST_PASS_TOKEN, PersistentDataType.STRING);
+    }
+
+    public boolean redeemGuestPass(Player redeemer, ItemStack pass) {
+        if (!isGuestPass(pass)) return false;
+
+        UUID sourceId = getGuestPassWaypointId(pass);
+        String token = getGuestPassToken(pass);
+
+        if (sourceId == null || token == null || isTokenUsed(token)) {
+            String msg = configManager.getMessage("guest-pass-invalid");
+            if (msg != null && !msg.isEmpty()) redeemer.sendMessage(configManager.getPrefix() + msg);
+            return false;
+        }
+
+        Waypoint source = waypointManager.getWaypoint(sourceId);
+        if (source == null) {
+            String msg = configManager.getMessage("guest-pass-invalid");
+            if (msg != null && !msg.isEmpty()) redeemer.sendMessage(configManager.getPrefix() + msg);
+            return false;
+        }
+
+        usedTokens.add(token);
+        saveUsedTokens();
+        
+        pass.setAmount(pass.getAmount() - 1);
+        
+        String msg = configManager.getMessage("guest-pass-used");
+        if (msg != null && !msg.isEmpty()) redeemer.sendMessage(configManager.getPrefix() + msg);
+        
+        // Departure FX
+        redeemer.getWorld().spawnParticle(org.bukkit.Particle.PORTAL, redeemer.getLocation().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
+        redeemer.getWorld().playSound(redeemer.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+
+        org.bukkit.Location dest = source.toBukkitLocation();
+        if (dest != null) {
+            redeemer.teleport(dest);
+            // Arrival FX
+            redeemer.getWorld().spawnParticle(org.bukkit.Particle.PORTAL, dest.clone().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
+            redeemer.getWorld().playSound(dest, org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+        }
+
+        return true;
+    }
+
 
     public void saveUsedTokens() {
         YamlConfiguration yaml = new YamlConfiguration();

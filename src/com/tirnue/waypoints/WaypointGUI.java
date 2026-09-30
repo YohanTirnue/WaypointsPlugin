@@ -21,7 +21,7 @@ public class WaypointGUI {
     private final Map<UUID, GUISession> sessions = new HashMap<>();
     private final Map<UUID, UUID> pendingRenames = new HashMap<>();
 
-    public enum GUIType { TRAVEL, MANAGEMENT, TRUST, LINKS, REDEEM_CONFIRM }
+    public enum GUIType { TRAVEL, MANAGEMENT, TRUST, LINKS, REDEEM_CONFIRM, ACTIVITY }
 
     public static class GUISession {
         public GUIType type;
@@ -91,6 +91,15 @@ public class WaypointGUI {
             if (linkedWp != null) linked.add(linkedWp);
         }
 
+        UUID pId = player.getUniqueId();
+        linked.sort((w1, w2) -> {
+            boolean f1 = plugin.getWaypointManager().isFavorite(pId, w1.getId());
+            boolean f2 = plugin.getWaypointManager().isFavorite(pId, w2.getId());
+            if (f1 && !f2) return -1;
+            if (!f1 && f2) return 1;
+            return w1.getName().compareToIgnoreCase(w2.getName());
+        });
+
         if (linked.isEmpty()) {
             inv.setItem(31, createItem(Material.GRAY_STAINED_GLASS, "&7No destinations available"));
         } else {
@@ -100,10 +109,16 @@ public class WaypointGUI {
                 double dist = fromWaypoint.distanceTo(lWp);
                 String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
                 double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, lWp);
-                inv.setItem(slot++, createItem(Material.ENDER_EYE, "&d" + lWp.getName(),
+                
+                boolean isFav = plugin.getWaypointManager().isFavorite(pId, lWp.getId());
+                String prefix = isFav ? "&6★ " : "&7☆ ";
+                
+                inv.setItem(slot++, createItem(Material.ENDER_EYE, prefix + "&d" + lWp.getName(),
                     "&7Owner: &f" + lWp.getOwnerName(),
                     "&7Distance: &f" + distStr,
-                    "&7Warp Time: &f" + String.format("%.1fs", time)));
+                    "&7Warp Time: &f" + String.format("%.1fs", time),
+                    "",
+                    "&eClick to warp | &7Shift-click to toggle favorite"));
             }
         }
 
@@ -119,12 +134,37 @@ public class WaypointGUI {
         inv.setItem(10, createItem(Material.NAME_TAG, "&e🏷 Rename Waypoint", "&7Click to rename"));
         inv.setItem(11, createItem(Material.PLAYER_HEAD, "&a👥 Manage Trust", "&7" + wp.getTrustedPlayers().size() + " trusted players"));
         inv.setItem(12, createItem(Material.IRON_BARS, "&b\uD83D\uDD17 Connected Waypoints", "&7" + wp.getLinkedWaypointIds().size() + " active links"));
-        inv.setItem(14, createItem(Material.WRITABLE_BOOK, "&d📜 Generate Link Ledger"));
-        inv.setItem(15, createItem(Material.BOOK, "&a📥 Redeem Link Ledger", "&7Hold a ledger and click"));
-        inv.setItem(16, createItem(Material.TNT, "&c💥 Destroy Waypoint", "&7Shift-click to confirm"));
+        inv.setItem(13, createItem(Material.BOOK, "&6📋 Activity Log", "&7View recent warp activity"));
+        inv.setItem(14, createItem(Material.PAPER, "&e✦ Generate Guest Pass", "&7Create a single-use warp token"));
+        inv.setItem(15, createItem(Material.WRITABLE_BOOK, "&d📜 Generate Link Ledger"));
+        inv.setItem(16, createItem(Material.BOOK, "&a📥 Redeem Link Ledger", "&7Hold a ledger and click"));
+        inv.setItem(17, createItem(Material.TNT, "&c💥 Destroy Waypoint", "&7Shift-click to confirm"));
         inv.setItem(22, createItem(Material.ARROW, "&7Close"));
 
         sessions.put(player.getUniqueId(), new GUISession(GUIType.MANAGEMENT, wp.getId(), 1));
+        player.openInventory(inv);
+    }
+
+    public void openActivityMenu(Player player, Waypoint wp) {
+        Inventory inv = Bukkit.createInventory(null, 54, deserializeTitle("&6✦ Activity - " + wp.getName()));
+        
+        List<Waypoint.ActivityEntry> log = wp.getActivityLog();
+        if (log == null || log.isEmpty()) {
+            inv.setItem(31, createItem(Material.GRAY_STAINED_GLASS_PANE, "&7No recent activity"));
+        } else {
+            int slot = 0;
+            for (Waypoint.ActivityEntry entry : log) {
+                if (slot >= 45) break;
+                String desc = entry.getAction().equals("WARP_TO") ? "Warped here from " + entry.getDestinationName() : "Warped to " + entry.getDestinationName();
+                inv.setItem(slot++, createItem(Material.CLOCK, "&f" + entry.getPlayerName(),
+                    "&7" + desc,
+                    "&8" + entry.getFormattedTime()));
+            }
+        }
+        
+        inv.setItem(49, createItem(Material.ARROW, "&7Back"));
+        
+        sessions.put(player.getUniqueId(), new GUISession(GUIType.ACTIVITY, wp.getId(), 1));
         player.openInventory(inv);
     }
 
@@ -197,9 +237,6 @@ public class WaypointGUI {
                 if (event.getSlot() == 49) {
                     player.closeInventory();
                 } else {
-                    // Logic to find clicked waypoint from item name or lore...
-                    // A proper implementation would use PDC on the item to store the UUID.
-                    // For now, we match by name for simplicity based on the layout
                     String wpName = itemName;
                     Waypoint dest = null;
                     if (event.getSlot() >= 10 && event.getSlot() <= 16) {
@@ -209,12 +246,17 @@ public class WaypointGUI {
                     } else if ((event.getSlot() >= 28 && event.getSlot() <= 34) || (event.getSlot() >= 37 && event.getSlot() <= 43)) {
                         for (UUID lid : wp.getLinkedWaypointIds()) {
                             Waypoint lwp = plugin.getWaypointManager().getWaypoint(lid);
-                            if (lwp != null && lwp.getName().equals(wpName)) { dest = lwp; break; }
+                            if (lwp != null && (wpName.equals("★ " + lwp.getName()) || wpName.equals("☆ " + lwp.getName()))) { dest = lwp; break; }
                         }
                     }
                     if (dest != null) {
-                        player.closeInventory();
-                        plugin.getTeleportManager().startTeleport(player, wp, dest);
+                        if (event.isShiftClick()) {
+                            plugin.getWaypointManager().toggleFavorite(player.getUniqueId(), dest.getId());
+                            openTravelMenu(player, wp);
+                        } else {
+                            player.closeInventory();
+                            plugin.getTeleportManager().startTeleport(player, wp, dest);
+                        }
                     }
                 }
                 break;
@@ -227,11 +269,17 @@ public class WaypointGUI {
                     openTrustMenu(player, wp);
                 } else if (event.getSlot() == 12) { // Connected Links
                     openLinksMenu(player, wp);
-                } else if (event.getSlot() == 14) { // Generate Ledger
+                } else if (event.getSlot() == 13) { // Activity Log
+                    openActivityMenu(player, wp);
+                } else if (event.getSlot() == 14) { // Guest Pass
+                    ItemStack pass = plugin.getLinkManager().generateGuestPass(wp);
+                    player.getInventory().addItem(pass);
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aGuest pass generated."));
+                } else if (event.getSlot() == 15) { // Generate Ledger
                     ItemStack ledger = plugin.getLinkManager().generateLedger(wp);
                     player.getInventory().addItem(ledger);
                     player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aLink ledger generated."));
-                } else if (event.getSlot() == 15) { // Redeem Ledger
+                } else if (event.getSlot() == 16) { // Redeem Ledger
                     ItemStack hand = player.getInventory().getItemInMainHand();
                     if (plugin.getLinkManager().isLedger(hand)) {
                         if (plugin.getLinkManager().redeemLedger(player, wp, hand)) {
@@ -242,7 +290,7 @@ public class WaypointGUI {
                     } else {
                         player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cYou must be holding a Link Ledger to redeem it."));
                     }
-                } else if (event.getSlot() == 16) { // Destroy
+                } else if (event.getSlot() == 17) { // Destroy
                     if (event.isShiftClick()) {
                         player.closeInventory();
                         plugin.getWaypointManager().deleteWaypoint(wp.getId());
@@ -252,6 +300,11 @@ public class WaypointGUI {
                     }
                 } else if (event.getSlot() == 22) { // Close
                     player.closeInventory();
+                }
+                break;
+            case ACTIVITY:
+                if (event.getSlot() == 49) {
+                    openManagementMenu(player, wp);
                 }
                 break;
             case TRUST:
