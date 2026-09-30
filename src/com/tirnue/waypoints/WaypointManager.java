@@ -1,0 +1,212 @@
+package com.tirnue.waypoints;
+
+import org.bukkit.Location;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.*;
+
+public class WaypointManager {
+
+    private final JavaPlugin plugin;
+    private final ConfigManager configManager;
+    private final Map<UUID, Waypoint> waypoints = new HashMap<>();
+    private final File dataFile;
+
+    public WaypointManager(JavaPlugin plugin, ConfigManager configManager) {
+        this.plugin = plugin;
+        this.configManager = configManager;
+        this.dataFile = new File(plugin.getDataFolder(), "waypoints.yml");
+    }
+
+    public Waypoint createWaypoint(Player owner, String name, Location loc) {
+        Waypoint waypoint = new Waypoint(
+                UUID.randomUUID(),
+                name,
+                owner.getUniqueId(),
+                owner.getName(),
+                loc.getWorld().getName(),
+                loc.getX(),
+                loc.getY(),
+                loc.getZ(),
+                loc.getYaw(),
+                loc.getPitch(),
+                false,
+                new HashSet<>(),
+                new HashSet<>(),
+                System.currentTimeMillis()
+        );
+        waypoints.put(waypoint.getId(), waypoint);
+        save();
+        return waypoint;
+    }
+
+    public void deleteWaypoint(UUID waypointId) {
+        Waypoint removed = waypoints.remove(waypointId);
+        if (removed != null) {
+            for (Waypoint w : waypoints.values()) {
+                w.getLinkedWaypointIds().remove(waypointId);
+            }
+            save();
+        }
+    }
+
+    public Waypoint getWaypoint(UUID id) {
+        return waypoints.get(id);
+    }
+
+    public List<Waypoint> getWaypointsByOwner(UUID ownerUUID) {
+        List<Waypoint> list = new ArrayList<>();
+        for (Waypoint w : waypoints.values()) {
+            if (w.isOwner(ownerUUID)) {
+                list.add(w);
+            }
+        }
+        return list;
+    }
+
+    public List<Waypoint> getGlobalWaypoints() {
+        List<Waypoint> list = new ArrayList<>();
+        for (Waypoint w : waypoints.values()) {
+            if (w.isGlobal()) {
+                list.add(w);
+            }
+        }
+        return list;
+    }
+
+    public Waypoint getWaypointNear(Location loc, double radius) {
+        Waypoint closest = null;
+        double minDistanceSq = radius * radius;
+        String worldName = loc.getWorld().getName();
+
+        for (Waypoint w : waypoints.values()) {
+            if (!w.getWorldName().equals(worldName)) continue;
+
+            double dx = w.getX() - loc.getX();
+            double dy = w.getY() - loc.getY();
+            double dz = w.getZ() - loc.getZ();
+            double distSq = dx * dx + dy * dy + dz * dz;
+
+            if (distSq <= minDistanceSq) {
+                closest = w;
+                minDistanceSq = distSq;
+            }
+        }
+        return closest;
+    }
+
+    public int getWaypointCount(UUID ownerUUID) {
+        return getWaypointsByOwner(ownerUUID).size();
+    }
+
+    public void linkWaypoints(UUID wpA, UUID wpB) {
+        Waypoint a = getWaypoint(wpA);
+        Waypoint b = getWaypoint(wpB);
+        if (a != null && b != null) {
+            a.addLink(wpB);
+            b.addLink(wpA);
+            save();
+        }
+    }
+
+    public void unlinkWaypoints(UUID wpA, UUID wpB) {
+        Waypoint a = getWaypoint(wpA);
+        Waypoint b = getWaypoint(wpB);
+        if (a != null) a.removeLink(wpB);
+        if (b != null) b.removeLink(wpA);
+        save();
+    }
+
+    public void trustPlayer(UUID waypointId, UUID playerUUID) {
+        Waypoint wp = getWaypoint(waypointId);
+        if (wp != null) {
+            wp.addTrust(playerUUID);
+            save();
+        }
+    }
+
+    public void untrustPlayer(UUID waypointId, UUID playerUUID) {
+        Waypoint wp = getWaypoint(waypointId);
+        if (wp != null) {
+            wp.removeTrust(playerUUID);
+            save();
+        }
+    }
+
+    public Collection<Waypoint> getAllWaypoints() {
+        return waypoints.values();
+    }
+
+    public void save() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        for (Waypoint wp : waypoints.values()) {
+            String key = wp.getId().toString();
+            yaml.set(key + ".name", wp.getName());
+            yaml.set(key + ".ownerUUID", wp.getOwnerUUID().toString());
+            yaml.set(key + ".ownerName", wp.getOwnerName());
+            yaml.set(key + ".worldName", wp.getWorldName());
+            yaml.set(key + ".x", wp.getX());
+            yaml.set(key + ".y", wp.getY());
+            yaml.set(key + ".z", wp.getZ());
+            yaml.set(key + ".yaw", wp.getYaw());
+            yaml.set(key + ".pitch", wp.getPitch());
+            yaml.set(key + ".isGlobal", wp.isGlobal());
+            List<String> trusted = new ArrayList<>();
+            for (UUID u : wp.getTrustedPlayers()) trusted.add(u.toString());
+            yaml.set(key + ".trustedPlayers", trusted);
+            List<String> linked = new ArrayList<>();
+            for (UUID u : wp.getLinkedWaypointIds()) linked.add(u.toString());
+            yaml.set(key + ".linkedWaypointIds", linked);
+            yaml.set(key + ".createdAt", wp.getCreatedAt());
+        }
+
+        try {
+            yaml.save(dataFile);
+        } catch (IOException e) {
+            plugin.getLogger().severe("Could not save waypoints to " + dataFile.getName());
+        }
+    }
+
+    public void load() {
+        if (!dataFile.exists()) return;
+        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(dataFile);
+        waypoints.clear();
+
+        for (String key : yaml.getKeys(false)) {
+            try {
+                UUID id = UUID.fromString(key);
+                String name = yaml.getString(key + ".name", "Unknown Waypoint");
+                UUID ownerUUID = UUID.fromString(yaml.getString(key + ".ownerUUID"));
+                String ownerName = yaml.getString(key + ".ownerName", "Unknown");
+                String worldName = yaml.getString(key + ".worldName", "world");
+                double x = yaml.getDouble(key + ".x", 0.0);
+                double y = yaml.getDouble(key + ".y", 0.0);
+                double z = yaml.getDouble(key + ".z", 0.0);
+                float yaw = (float) yaml.getDouble(key + ".yaw", 0.0);
+                float pitch = (float) yaml.getDouble(key + ".pitch", 0.0);
+                boolean isGlobal = yaml.getBoolean(key + ".isGlobal", false);
+                
+                Set<UUID> trustedPlayers = new HashSet<>();
+                for (String uStr : yaml.getStringList(key + ".trustedPlayers")) {
+                    trustedPlayers.add(UUID.fromString(uStr));
+                }
+
+                Set<UUID> linkedWaypointIds = new HashSet<>();
+                for (String uStr : yaml.getStringList(key + ".linkedWaypointIds")) {
+                    linkedWaypointIds.add(UUID.fromString(uStr));
+                }
+
+                long createdAt = yaml.getLong(key + ".createdAt", System.currentTimeMillis());
+
+                Waypoint wp = new Waypoint(id, name, ownerUUID, ownerName, worldName, x, y, z, yaw, pitch, isGlobal, trustedPlayers, linkedWaypointIds, createdAt);
+                waypoints.put(id, wp);
+            } catch (Exception e) {
+                plugin.getLogger().warning("Failed to load waypoint with key " + key + ": " + e.getMessage());
+            }
+        }
+    }
+}

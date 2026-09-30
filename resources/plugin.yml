@@ -1,0 +1,25 @@
+name: TirnueWaypoints
+version: 1.0.0
+main: com.tirnue.waypoints.TirnueWaypoints
+api-version: '1.21'
+description: Magical waypoint travel network with private ownership, physical link receipts, per-waypoint trust, and distance-scaled teleportation.
+author: Tirnue
+depend:
+  - Vault
+
+commands:
+  waypoint:
+    description: Main TirnueWaypoints command
+    usage: /<command> [subcommand]
+    aliases: [wp]
+
+permissions:
+  waypoint.use:
+    description: Allows placing and using waypoints
+    default: true
+  waypoint.admin:
+    description: Full admin access to waypoints
+    default: op
+  waypoint.vip:
+    description: VIP tier with increased limits
+    default: false
