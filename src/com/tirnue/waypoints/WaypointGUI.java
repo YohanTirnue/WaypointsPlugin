@@ -20,8 +20,39 @@ public class WaypointGUI {
     private final TirnueWaypoints plugin;
     private final Map<UUID, GUISession> sessions = new HashMap<>();
     private final Map<UUID, UUID> pendingRenames = new HashMap<>();
+    private final Map<UUID, UUID> pendingFeeChanges = new HashMap<>();
 
-    public enum GUIType { TRAVEL, MANAGEMENT, TRUST, LINKS, REDEEM_CONFIRM, ACTIVITY, CUSTOMIZE }
+    public boolean hasPendingFeeChange(UUID playerId) {
+        return pendingFeeChanges.containsKey(playerId);
+    }
+
+    public void processFeeChange(Player player, String input) {
+        UUID wpId = pendingFeeChanges.remove(player.getUniqueId());
+        if (wpId == null) return;
+        if (input.equalsIgnoreCase("cancel")) {
+            player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cFee change cancelled."));
+            return;
+        }
+        try {
+            double fee = Double.parseDouble(input);
+            double maxFee = plugin.getConfig().getDouble("rent.max-fee", 1000.0);
+            if (fee < 0 || fee > maxFee) {
+                player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cFee must be between 0 and " + maxFee + "."));
+                return;
+            }
+            Waypoint wp = plugin.getWaypointManager().getWaypoint(wpId);
+            if (wp != null) {
+                wp.setUsageFee(fee);
+                plugin.getWaypointManager().saveAsync();
+                player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aUsage fee set to $" + String.format("%.2f", fee)));
+                Bukkit.getScheduler().runTask(plugin, () -> openManagementMenu(player, wp));
+            }
+        } catch (NumberFormatException e) {
+            player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cInvalid number. Fee change cancelled."));
+        }
+    }
+
+    public enum GUIType { TRAVEL, MANAGEMENT, TRUST, LINKS, REDEEM_CONFIRM, ACTIVITY, CUSTOMIZE, UPGRADE, ADMIN_NETWORK }
 
     public static class GUISession {
         public GUIType type;
@@ -139,6 +170,21 @@ public class WaypointGUI {
         inv.setItem(15, createItem(Material.PAPER, "&e✦ Generate Guest Pass", "&7Create a single-use warp token"));
         inv.setItem(16, createItem(Material.WRITABLE_BOOK, "&d📜 Generate Link Ledger"));
         inv.setItem(17, createItem(Material.BOOK, "&a📥 Redeem Link Ledger", "&7Hold a ledger and click"));
+        
+        String tier = wp.getTier();
+        String nextTier = "none";
+        if (tier.equalsIgnoreCase("BASIC")) nextTier = "ADVANCED";
+        else if (tier.equalsIgnoreCase("ADVANCED")) nextTier = "MASTER";
+        
+        if (nextTier.equals("none")) {
+            inv.setItem(20, createItem(Material.ANVIL, "&6⬆ Upgrade Waypoint", "&7Max tier reached"));
+        } else {
+            double cost = plugin.getConfig().getDouble("tiers." + nextTier.toLowerCase() + ".upgrade-cost-economy", 0);
+            inv.setItem(20, createItem(Material.ANVIL, "&6⬆ Upgrade Waypoint", "&7Current tier: &f" + tier, "&7Next tier: &f" + nextTier, "&7Cost: &a$" + cost + " &7+ items"));
+        }
+
+        inv.setItem(21, createItem(Material.GOLD_INGOT, "&6💰 Set Usage Fee", "&7Current fee: &a$" + String.format("%.2f", wp.getUsageFee()), "&eClick to change"));
+
         inv.setItem(26, createItem(Material.TNT, "&c💥 Destroy Waypoint", "&7Shift-click to confirm"));
         inv.setItem(22, createItem(Material.ARROW, "&7Close"));
 
@@ -249,6 +295,73 @@ public class WaypointGUI {
         player.openInventory(inv);
     }
 
+    public void openUpgradeMenu(Player player, Waypoint wp) {
+        Inventory inv = Bukkit.createInventory(null, 27, deserializeTitle("&6⬆ Upgrade - " + wp.getName()));
+        String tier = wp.getTier();
+        String nextTier = tier.equalsIgnoreCase("BASIC") ? "ADVANCED" : "MASTER";
+        
+        double cost = plugin.getConfig().getDouble("tiers." + nextTier.toLowerCase() + ".upgrade-cost-economy", 0);
+        int maxLinks = plugin.getConfig().getInt("tiers." + nextTier.toLowerCase() + ".max-links", 0);
+        int maxTrusted = plugin.getConfig().getInt("tiers." + nextTier.toLowerCase() + ".max-trusted", 0);
+        double speedMult = plugin.getConfig().getDouble("tiers." + nextTier.toLowerCase() + ".teleport-speed-multiplier", 1.0);
+        
+        List<String> lore = new ArrayList<>();
+        lore.add("&7Upgrade to &f" + nextTier);
+        lore.add("&7Cost: &a$" + cost);
+        org.bukkit.configuration.ConfigurationSection items = plugin.getConfig().getConfigurationSection("tiers." + nextTier.toLowerCase() + ".upgrade-cost-items");
+        if (items != null) {
+            for (String key : items.getKeys(false)) {
+                lore.add("&7- " + items.getInt(key) + "x " + key);
+            }
+        }
+        lore.add("");
+        lore.add("&eClick to confirm");
+        
+        inv.setItem(13, createItem(Material.EMERALD_BLOCK, "&aConfirm Upgrade", lore.toArray(new String[0])));
+        inv.setItem(11, createItem(Material.EXPERIENCE_BOTTLE, "&bBenefits", 
+            "&7Max Links: &f" + maxLinks,
+            "&7Max Trusted: &f" + maxTrusted,
+            "&7Speed Multiplier: &f" + speedMult + "x"));
+        inv.setItem(22, createItem(Material.BARRIER, "&cCancel"));
+
+        sessions.put(player.getUniqueId(), new GUISession(GUIType.UPGRADE, wp.getId(), 1));
+        player.openInventory(inv);
+    }
+
+    public void openAdminNetworkMenu(Player player) {
+        openAdminNetworkMenu(player, 1);
+    }
+
+    public void openAdminNetworkMenu(Player player, int page) {
+        Inventory inv = Bukkit.createInventory(null, 54, deserializeTitle("&4⚙ Waypoint Network"));
+        List<Waypoint> allWps = new ArrayList<>(plugin.getWaypointManager().getAllWaypoints());
+        allWps.sort(Comparator.comparing(Waypoint::getName));
+        
+        int start = (page - 1) * 45;
+        int end = Math.min(start + 45, allWps.size());
+        
+        for (int i = start; i < end; i++) {
+            Waypoint wp = allWps.get(i);
+            Material mat = wp.isGlobal() ? Material.BEACON : Material.ENDER_EYE;
+            inv.setItem(i - start, createItem(mat, "&f" + wp.getName(),
+                "&7Owner: &f" + wp.getOwnerName(),
+                "&7World: &f" + wp.getWorldName(),
+                "&7Coords: &f" + (int)wp.getX() + ", " + (int)wp.getY() + ", " + (int)wp.getZ(),
+                "&7Tier: &f" + wp.getTier(),
+                "&7Links: &f" + wp.getLinkedWaypointIds().size(),
+                "&7Trust: &f" + wp.getTrustedPlayers().size(),
+                "&7Usage Fee: &a$" + String.format("%.2f", wp.getUsageFee()),
+                "&eClick to teleport"));
+        }
+        
+        if (page > 1) inv.setItem(45, createItem(Material.ARROW, "&7Previous Page"));
+        inv.setItem(49, createItem(Material.BARRIER, "&cClose"));
+        if (end < allWps.size()) inv.setItem(53, createItem(Material.ARROW, "&7Next Page"));
+        
+        sessions.put(player.getUniqueId(), new GUISession(GUIType.ADMIN_NETWORK, null, page));
+        player.openInventory(inv);
+    }
+
     public void handleClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player)) return;
         Player player = (Player) event.getWhoClicked();
@@ -335,6 +448,14 @@ public class WaypointGUI {
                     } else {
                         player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cShift-click to confirm destruction."));
                     }
+                } else if (event.getSlot() == 20) { // Upgrade
+                    if (!wp.getTier().equalsIgnoreCase("MASTER")) {
+                        openUpgradeMenu(player, wp);
+                    }
+                } else if (event.getSlot() == 21) { // Set Usage Fee
+                    player.closeInventory();
+                    pendingFeeChanges.put(player.getUniqueId(), wp.getId());
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aType the new usage fee for your waypoint in chat, or type 'cancel' to abort."));
                 } else if (event.getSlot() == 22) { // Close
                     player.closeInventory();
                 }
@@ -394,6 +515,68 @@ public class WaypointGUI {
                     }
                 }
                 break;
+            case UPGRADE:
+                if (event.getSlot() == 22) {
+                    openManagementMenu(player, wp);
+                } else if (event.getSlot() == 13) {
+                    String tier = wp.getTier();
+                    String nextTier = tier.equalsIgnoreCase("BASIC") ? "ADVANCED" : "MASTER";
+                    
+                    net.milkbowl.vault.economy.Economy econ = plugin.getEconomy();
+                    double cost = plugin.getConfig().getDouble("tiers." + nextTier.toLowerCase() + ".upgrade-cost-economy", 0);
+                    if (econ != null && !econ.has(player, cost)) {
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cNot enough money!"));
+                        return;
+                    }
+                    
+                    // Check items
+                    org.bukkit.configuration.ConfigurationSection items = plugin.getConfig().getConfigurationSection("tiers." + nextTier.toLowerCase() + ".upgrade-cost-items");
+                    if (items != null) {
+                        for (String key : items.getKeys(false)) {
+                            Material mat = Material.matchMaterial(key);
+                            int amount = items.getInt(key);
+                            if (mat != null && !player.getInventory().containsAtLeast(new ItemStack(mat), amount)) {
+                                player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cMissing items: " + amount + "x " + key));
+                                return;
+                            }
+                        }
+                        // Remove items
+                        for (String key : items.getKeys(false)) {
+                            Material mat = Material.matchMaterial(key);
+                            int amount = items.getInt(key);
+                            if (mat != null) player.getInventory().removeItem(new ItemStack(mat, amount));
+                        }
+                    }
+                    
+                    if (econ != null) econ.withdrawPlayer(player, cost);
+                    
+                    wp.setTier(nextTier.toUpperCase());
+                    plugin.getWaypointManager().saveAsync();
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aWaypoint upgraded to " + nextTier.toUpperCase() + "!"));
+                    openManagementMenu(player, wp);
+                }
+                break;
+            case ADMIN_NETWORK:
+                if (event.getSlot() == 49) {
+                    player.closeInventory();
+                } else if (event.getSlot() == 45 && event.getCurrentItem().getType() == Material.ARROW) {
+                    openAdminNetworkMenu(player, session.page - 1);
+                } else if (event.getSlot() == 53 && event.getCurrentItem().getType() == Material.ARROW) {
+                    openAdminNetworkMenu(player, session.page + 1);
+                } else if (event.getCurrentItem().getType() == Material.ENDER_EYE || event.getCurrentItem().getType() == Material.BEACON) {
+                    String wpName = itemName;
+                    for (Waypoint awp : plugin.getWaypointManager().getAllWaypoints()) {
+                        if (awp.getName().equals(wpName)) {
+                            org.bukkit.Location loc = awp.toBukkitLocation();
+                            if (loc != null) {
+                                player.teleport(loc);
+                                player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aTeleported to waypoint " + wpName));
+                            }
+                            break;
+                        }
+                    }
+                }
+                break;
         }
     }
 
@@ -427,5 +610,6 @@ public class WaypointGUI {
     public void cleanupPlayer(UUID playerId) {
         sessions.remove(playerId);
         pendingRenames.remove(playerId);
+        pendingFeeChanges.remove(playerId);
     }
 }

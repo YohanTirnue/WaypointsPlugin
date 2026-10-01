@@ -111,6 +111,10 @@ public class WaypointManager {
         return getWaypointsByOwner(ownerUUID).size();
     }
 
+    public int getMaxLinksForWaypoint(Waypoint wp) {
+        return plugin.getConfig().getInt("tiers." + wp.getTier().toLowerCase() + ".max-links", 3);
+    }
+
     public void linkWaypoints(UUID wpA, UUID wpB) {
         Waypoint a = getWaypoint(wpA);
         Waypoint b = getWaypoint(wpB);
@@ -189,6 +193,8 @@ public class WaypointManager {
             yaml.set(key + ".isGlobal", wp.isGlobal());
             yaml.set(key + ".particleType", wp.getParticleType());
             yaml.set(key + ".crystalMaterial", wp.getCrystalMaterial());
+            yaml.set(key + ".tier", wp.getTier());
+            yaml.set(key + ".usageFee", wp.getUsageFee());
             List<String> trusted = new ArrayList<>();
             for (UUID u : wp.getTrustedPlayers()) trusted.add(u.toString());
             yaml.set(key + ".trustedPlayers", trusted);
@@ -231,6 +237,8 @@ public class WaypointManager {
                 boolean isGlobal = yaml.getBoolean(key + ".isGlobal", false);
                 String particleType = yaml.getString(key + ".particleType", "ENCHANT");
                 String crystalMaterial = yaml.getString(key + ".crystalMaterial", "AMETHYST_SHARD");
+                String tier = yaml.getString(key + ".tier", "BASIC");
+                double usageFee = yaml.getDouble(key + ".usageFee", 0.0);
                 
                 Set<UUID> trustedPlayers = new HashSet<>();
                 for (String uStr : yaml.getStringList(key + ".trustedPlayers")) {
@@ -247,6 +255,8 @@ public class WaypointManager {
                 Waypoint wp = new Waypoint(id, name, ownerUUID, ownerName, worldName, x, y, z, yaw, pitch, isGlobal, trustedPlayers, linkedWaypointIds, createdAt);
                 wp.setParticleType(particleType);
                 wp.setCrystalMaterial(crystalMaterial);
+                wp.setTier(tier);
+                wp.setUsageFee(usageFee);
                 
                 if (yaml.contains(key + ".activityLog")) {
                     for (String iStr : yaml.getConfigurationSection(key + ".activityLog").getKeys(false)) {

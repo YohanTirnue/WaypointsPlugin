@@ -102,6 +102,16 @@ public class WaypointListener implements Listener {
     @EventHandler
     public void onAsyncChat(AsyncChatEvent event) {
         Player player = event.getPlayer();
+        // Handle fee change input first
+        if (plugin.getWaypointGUI().hasPendingFeeChange(player.getUniqueId())) {
+            event.setCancelled(true);
+            String input = PlainTextComponentSerializer.plainText().serialize(event.message());
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                plugin.getWaypointGUI().processFeeChange(player, input);
+            });
+            return;
+        }
+        // Handle rename input
         if (plugin.getWaypointGUI().hasPendingRename(player.getUniqueId())) {
             event.setCancelled(true);
             String newName = PlainTextComponentSerializer.plainText().serialize(event.message());

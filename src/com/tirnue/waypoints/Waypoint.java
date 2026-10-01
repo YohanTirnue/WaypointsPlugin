@@ -28,6 +28,8 @@ public class Waypoint {
     private long createdAt;
     private String particleType = "ENCHANT";
     private String crystalMaterial = "AMETHYST_SHARD";
+    private String tier = "BASIC";
+    private double usageFee = 0.0;
     private final List<ActivityEntry> activityLog = new ArrayList<>();
 
     public static class ActivityEntry {
@@ -124,6 +126,12 @@ public class Waypoint {
 
     public String getCrystalMaterial() { return crystalMaterial; }
     public void setCrystalMaterial(String crystalMaterial) { this.crystalMaterial = crystalMaterial; }
+
+    public String getTier() { return tier; }
+    public void setTier(String tier) { this.tier = tier; }
+
+    public double getUsageFee() { return usageFee; }
+    public void setUsageFee(double usageFee) { this.usageFee = usageFee; }
 
     public boolean isOwner(UUID playerUUID) {
         return ownerUUID != null && ownerUUID.equals(playerUUID);

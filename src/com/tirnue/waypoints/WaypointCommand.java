@@ -189,6 +189,8 @@ public class WaypointCommand implements CommandExecutor, TabCompleter {
             } else if (adminSub.equals("reload")) {
                 plugin.getConfigManager().reloadConfig();
                 player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aConfig reloaded."));
+            } else if (adminSub.equals("network")) {
+                plugin.getWaypointGUI().openAdminNetworkMenu(player);
             }
             return true;
         }
@@ -219,7 +221,7 @@ public class WaypointCommand implements CommandExecutor, TabCompleter {
             comps.add("remove"); comps.add("menu"); comps.add("help");
             if (checkAdmin(sender)) comps.add("admin");
         } else if (args.length == 2 && args[0].equalsIgnoreCase("admin") && checkAdmin(sender)) {
-            comps.add("setglobal"); comps.add("removeglobal"); comps.add("remove"); comps.add("give"); comps.add("reload");
+            comps.add("setglobal"); comps.add("removeglobal"); comps.add("remove"); comps.add("give"); comps.add("reload"); comps.add("network");
         }
         return comps;
     }

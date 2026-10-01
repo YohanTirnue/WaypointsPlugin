@@ -83,6 +83,18 @@ public class TeleportManager {
             }
         }
 
+        // Rent-a-waypoint fee
+        if (to.getUsageFee() > 0 && !to.isOwner(pid) && plugin.getConfig().getBoolean("rent.enabled", false)) {
+            Economy econ = plugin.getEconomy();
+            if (econ != null) {
+                double fee = to.getUsageFee();
+                if (!econ.has(player, fee)) {
+                    player.sendMessage(config.getPrefix() + ChatColor.translateAlternateColorCodes('&', "&cNot enough money! Fee: &e$" + String.format("%.2f", fee)));
+                    return false;
+                }
+            }
+        }
+
         int totalTicks = (int) (calculateWarmupSeconds(from, to) * 20);
         ActiveTeleport teleport = new ActiveTeleport(player, from, to, player.getLocation(), totalTicks, cost);
         activeTeleports.put(pid, teleport);
@@ -166,6 +178,17 @@ public class TeleportManager {
                 player.setLevel(player.getLevel() - config.getXpLevelsPerWarp());
             } else if ("ITEM".equalsIgnoreCase(type)) {
                 player.getInventory().removeItem(new ItemStack(config.getCostItemType(), config.getCostItemAmount()));
+            }
+        }
+
+        if (teleport.to.getUsageFee() > 0 && !teleport.to.isOwner(pid)) {
+            Economy econ = plugin.getEconomy();
+            if (econ != null && plugin.getConfig().getBoolean("rent.enabled", false)) {
+                double fee = teleport.to.getUsageFee();
+                double taxRate = plugin.getConfig().getDouble("rent.server-tax-percent", 10) / 100.0;
+                double ownerCut = fee * (1.0 - taxRate);
+                econ.withdrawPlayer(player, fee);
+                econ.depositPlayer(org.bukkit.Bukkit.getOfflinePlayer(teleport.to.getOwnerUUID()), ownerCut);
             }
         }
 
