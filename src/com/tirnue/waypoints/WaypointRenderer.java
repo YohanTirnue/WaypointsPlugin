@@ -19,6 +19,7 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Transformation;
+import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
 import java.util.ArrayList;
@@ -36,11 +37,49 @@ public class WaypointRenderer {
     private final NamespacedKey wpIdKey;
     private BukkitTask animationTask;
     private final Quaternionf reusableQuat = new Quaternionf();
+    private final Matrix4f reusableMatrix = new Matrix4f();
 
     public WaypointRenderer(TirnueWaypoints plugin, ConfigManager config) {
         this.plugin = plugin;
         this.config = config;
         this.wpIdKey = new NamespacedKey(plugin, "tirnue_wp_id");
+    }
+
+    /**
+     * Maps any material or item name (including END_CRYSTAL, AMETHYST_SHARD, etc.)
+     * to a valid 3D block material so crystals never look like flat 2D dropped items.
+     */
+    public static Material toBlockMaterial(String name) {
+        if (name == null || name.isEmpty()) return Material.AMETHYST_CLUSTER;
+        Material mat;
+        try {
+            mat = Material.valueOf(name.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return Material.AMETHYST_CLUSTER;
+        }
+        if (mat.isBlock()) {
+            return mat;
+        }
+        switch (mat) {
+            case END_CRYSTAL:
+            case AMETHYST_SHARD:
+                return Material.AMETHYST_CLUSTER;
+            case DIAMOND:
+                return Material.DIAMOND_BLOCK;
+            case EMERALD:
+                return Material.EMERALD_BLOCK;
+            case NETHER_STAR:
+                return Material.BEACON;
+            case ENDER_EYE:
+            case HEART_OF_THE_SEA:
+                return Material.CONDUIT;
+            case PRISMARINE_CRYSTALS:
+                return Material.SEA_LANTERN;
+            case GLOWSTONE_DUST:
+                return Material.GLOWSTONE;
+            default:
+                return Material.AMETHYST_CLUSTER;
+        }
     }
 
     public void spawnWaypoint(Waypoint wp) {
@@ -54,7 +93,7 @@ public class WaypointRenderer {
         World world = loc.getWorld();
         UUID wpId = wp.getId();
         List<BlockDisplay> structureBlocks = new ArrayList<>();
-        List<ItemDisplay> crystals = new ArrayList<>(3);
+        List<BlockDisplay> crystals = new ArrayList<>(3);
 
         // =========================================================================
         // 1. 3x3 Wide Stone Foundation Platform (Ref: waystonereference.png)
@@ -143,44 +182,40 @@ public class WaypointRenderer {
                 0.65f, 0.20f, 0.65f, 0.0f, 2.85f, 0.0f, wpId));
 
         // =========================================================================
-        // 3. Top Floating Relic Sphere (Large Eye of Ender at Y: 3.40)
+        // 3. Top Floating Relic: 3D Block Crystal (Y: 3.40)
         // =========================================================================
+        Material crystalBlockMat = toBlockMaterial(wp.getCrystalMaterial());
         Location topRelicLoc = loc.clone().add(0, 3.40, 0);
-        Material parsedMat;
-        try {
-            parsedMat = Material.valueOf(wp.getCrystalMaterial());
-        } catch (IllegalArgumentException e) {
-            parsedMat = Material.ENDER_EYE;
-        }
-        final Material crystalMat = parsedMat;
 
-        ItemDisplay topRelic = world.spawn(topRelicLoc, ItemDisplay.class, entity -> {
-            entity.setItemStack(new ItemStack(crystalMat));
+        BlockDisplay topRelic = world.spawn(topRelicLoc, BlockDisplay.class, entity -> {
+            entity.setBlock(crystalBlockMat.createBlockData());
             entity.setInterpolationDuration(2);
             entity.setInterpolationDelay(0);
-            Transformation t = entity.getTransformation();
-            t.getScale().set(0.85f, 0.85f, 0.85f);
-            entity.setTransformation(t);
+            Matrix4f mat = new Matrix4f()
+                    .scale(0.65f, 0.65f, 0.65f)
+                    .translate(-0.5f, -0.5f, -0.5f);
+            entity.setTransformationMatrix(mat);
             entity.setPersistent(false);
             entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
         });
 
         // =========================================================================
-        // 4. Three Floating Orbiting Items (Floating around the 3x3 Waypoint)
+        // 4. Three Floating Orbiting 3D Blocks (Never looking like flat dropped items)
         // =========================================================================
         Location orbitCenterLoc = loc.clone().add(0, 1.75, 0);
         for (int i = 0; i < 3; i++) {
-            ItemDisplay orbitItem = world.spawn(orbitCenterLoc, ItemDisplay.class, entity -> {
-                entity.setItemStack(new ItemStack(crystalMat));
+            BlockDisplay orbitBlock = world.spawn(orbitCenterLoc, BlockDisplay.class, entity -> {
+                entity.setBlock(crystalBlockMat.createBlockData());
                 entity.setInterpolationDuration(2);
                 entity.setInterpolationDelay(0);
-                Transformation t = entity.getTransformation();
-                t.getScale().set(0.50f, 0.50f, 0.50f);
-                entity.setTransformation(t);
+                Matrix4f mat = new Matrix4f()
+                        .scale(0.42f, 0.42f, 0.42f)
+                        .translate(-0.5f, -0.5f, -0.5f);
+                entity.setTransformationMatrix(mat);
                 entity.setPersistent(false);
                 entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
             });
-            crystals.add(orbitItem);
+            crystals.add(orbitBlock);
         }
 
         // =========================================================================
@@ -312,13 +347,15 @@ public class WaypointRenderer {
                     UUID wpId = entry.getKey();
                     Waypoint wp = waypointDataCache.get(wpId);
 
-                    // 1. Animate Top Large Relic Sphere
+                    // 1. Animate Top 3D Block Relic (Centered Rotation & Gentle Bob)
                     if (entities.topRelic != null && entities.topRelic.isValid()) {
-                        Transformation topT = entities.topRelic.getTransformation();
-                        topT.getTranslation().set(0, topBob, 0);
                         reusableQuat.rotationY(topAngle);
-                        topT.getLeftRotation().set(reusableQuat);
-                        entities.topRelic.setTransformation(topT);
+                        reusableMatrix.identity()
+                                .translate(0, topBob, 0)
+                                .rotate(reusableQuat)
+                                .scale(0.65f, 0.65f, 0.65f)
+                                .translate(-0.5f, -0.5f, -0.5f);
+                        entities.topRelic.setTransformationMatrix(reusableMatrix);
 
                         // Subtle green sparkle ascending into the top relic
                         if (ticks % 4 == 0 && entities.baseLocation != null) {
@@ -327,10 +364,10 @@ public class WaypointRenderer {
                         }
                     }
 
-                    // 2. Animate the 3 Orbiting Items (Floating around the 3x3 Waypoint)
+                    // 2. Animate the 3 Orbiting 3D Block Crystals (Floating around the 3x3 Waypoint)
                     if (entities.crystals != null && !entities.crystals.isEmpty()) {
                         for (int i = 0; i < entities.crystals.size(); i++) {
-                            ItemDisplay crystal = entities.crystals.get(i);
+                            BlockDisplay crystal = entities.crystals.get(i);
                             if (crystal == null || !crystal.isValid()) continue;
 
                             float phaseOffset = (float) (i * 2.0 * Math.PI / 3.0);
@@ -340,14 +377,13 @@ public class WaypointRenderer {
                             float x = (float) (Math.cos(angle) * orbitRadius);
                             float z = (float) (Math.sin(angle) * orbitRadius);
 
-                            Transformation t = crystal.getTransformation();
-                            t.getScale().set(0.50f, 0.50f, 0.50f);
-                            t.getTranslation().set(x, bobOffset, z);
-
-                            // Spin each floating crystal on its own axis with tilt
                             reusableQuat.rotationY((float) (angle * 2.5)).rotateZ(0.20f);
-                            t.getLeftRotation().set(reusableQuat);
-                            crystal.setTransformation(t);
+                            reusableMatrix.identity()
+                                    .translate(x, bobOffset, z)
+                                    .rotate(reusableQuat)
+                                    .scale(0.42f, 0.42f, 0.42f)
+                                    .translate(-0.5f, -0.5f, -0.5f);
+                            crystal.setTransformationMatrix(reusableMatrix);
 
                             // Ambient particles from each orbiting crystal
                             if (doParticles && wp != null && entities.baseLocation != null) {
@@ -407,15 +443,15 @@ public class WaypointRenderer {
 
     private static class WaypointEntities {
         final List<BlockDisplay> structureBlocks;
-        final List<ItemDisplay> crystals;
-        final ItemDisplay topRelic;
+        final List<BlockDisplay> crystals;
+        final BlockDisplay topRelic;
         final ItemDisplay insetEye;
         final TextDisplay label;
         final Interaction interaction;
         final Location baseLocation;
 
-        WaypointEntities(List<BlockDisplay> structureBlocks, List<ItemDisplay> crystals,
-                         ItemDisplay topRelic, ItemDisplay insetEye, TextDisplay label,
+        WaypointEntities(List<BlockDisplay> structureBlocks, List<BlockDisplay> crystals,
+                         BlockDisplay topRelic, ItemDisplay insetEye, TextDisplay label,
                          Interaction interaction, Location baseLocation) {
             this.structureBlocks = structureBlocks;
             this.crystals = crystals;
@@ -433,8 +469,8 @@ public class WaypointRenderer {
                 }
             }
             if (crystals != null) {
-                for (ItemDisplay id : crystals) {
-                    if (id != null && id.isValid()) id.remove();
+                for (BlockDisplay bd : crystals) {
+                    if (bd != null && bd.isValid()) bd.remove();
                 }
             }
             if (topRelic != null && topRelic.isValid()) topRelic.remove();

@@ -362,10 +362,21 @@ public class WaypointGUI {
             inv.setItem(i, item);
         }
 
-        Material[] crystals = {Material.AMETHYST_SHARD, Material.DIAMOND, Material.EMERALD, Material.NETHER_STAR, Material.END_CRYSTAL, Material.ENDER_EYE, Material.HEART_OF_THE_SEA, Material.PRISMARINE_CRYSTALS, Material.GLOWSTONE_DUST};
+        Material[] crystals = {
+            Material.AMETHYST_CLUSTER, Material.CONDUIT, Material.RESPAWN_ANCHOR,
+            Material.BEACON, Material.SEA_LANTERN, Material.EMERALD_BLOCK,
+            Material.DIAMOND_BLOCK, Material.GLOWSTONE, Material.LODESTONE
+        };
+        String[] crystalNames = {
+            "&d✦ Amethyst Crystal", "&b✦ Conduit Core", "&5✦ Respawn Anchor",
+            "&f✦ Crystal Beacon", "&3✦ Sea Lantern", "&a✦ Emerald Relic",
+            "&b✦ Diamond Relic", "&e✦ Glowstone Crystal", "&7✦ Lodestone Anchor"
+        };
         for(int i = 0; i < 9; i++) {
-            ItemStack item = createItem(crystals[i], "&b" + crystals[i].name(), "&7Click to select");
-            if (crystals[i].name().equals(wp.getCrystalMaterial())) {
+            ItemStack item = createItem(crystals[i], crystalNames[i], "&7Click to select 3D block crystal");
+            String wpMat = wp.getCrystalMaterial();
+            if (crystals[i].name().equalsIgnoreCase(wpMat) ||
+                (wpMat != null && (crystals[i].name().startsWith(wpMat) || wpMat.startsWith(crystals[i].name())))) {
                 item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.UNBREAKING, 1);
                 ItemMeta meta = item.getItemMeta();
                 meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
@@ -698,7 +709,11 @@ public class WaypointGUI {
                     plugin.getWaypointManager().saveAsync();
                     openCustomizeMenu(player, wp);
                 } else if (slot >= 9 && slot < 18) {
-                    Material[] crystals = {Material.AMETHYST_SHARD, Material.DIAMOND, Material.EMERALD, Material.NETHER_STAR, Material.END_CRYSTAL, Material.ENDER_EYE, Material.HEART_OF_THE_SEA, Material.PRISMARINE_CRYSTALS, Material.GLOWSTONE_DUST};
+                    Material[] crystals = {
+                        Material.AMETHYST_CLUSTER, Material.CONDUIT, Material.RESPAWN_ANCHOR,
+                        Material.BEACON, Material.SEA_LANTERN, Material.EMERALD_BLOCK,
+                        Material.DIAMOND_BLOCK, Material.GLOWSTONE, Material.LODESTONE
+                    };
                     wp.setCrystalMaterial(crystals[slot - 9].name());
                     plugin.getWaypointManager().saveAsync();
                     plugin.getWaypointRenderer().despawnWaypoint(wp.getId());
