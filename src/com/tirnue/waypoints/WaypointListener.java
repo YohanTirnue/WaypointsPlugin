@@ -12,6 +12,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -30,6 +31,43 @@ public class WaypointListener implements Listener {
 
     public WaypointListener(TirnueWaypoints plugin) {
         this.plugin = plugin;
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onBlockPlace(BlockPlaceEvent event) {
+        Player player = event.getPlayer();
+        ItemStack hand = event.getItemInHand();
+        
+        // Check if the placed item is a Waypoint Core (has PDC marker)
+        if (hand.hasItemMeta() && hand.getItemMeta().getPersistentDataContainer().has(
+                new org.bukkit.NamespacedKey(plugin, "tirnue_wp_core"), org.bukkit.persistence.PersistentDataType.BYTE)) {
+            
+            // Cancel the block placement - don't place lodestone in world
+            event.setCancelled(true);
+            
+            // Check waypoint limit
+            int count = plugin.getWaypointManager().getWaypointCount(player.getUniqueId());
+            int limit = player.hasPermission("waypoint.vip") ? plugin.getConfigManager().getVipMaxWaypoints() : plugin.getConfigManager().getDefaultMaxWaypoints();
+            if (count >= limit) {
+                player.sendMessage(org.bukkit.ChatColor.translateAlternateColorCodes('&', plugin.getConfigManager().getPrefix() + " &cMax waypoint limit reached (" + limit + ")."));
+                return;
+            }
+            
+            // Consume one core from hand
+            hand.setAmount(hand.getAmount() - 1);
+            
+            // Create waypoint with temporary name at block location
+            org.bukkit.Location loc = event.getBlock().getLocation().add(0.5, 0, 0.5); // center of block
+            Waypoint wp = plugin.getWaypointManager().createWaypoint(player, "Unnamed Waypoint", loc);
+            
+            // Store pending naming and prompt player
+            plugin.getWaypointGUI().startPendingCreate(player.getUniqueId(), wp.getId());
+            player.sendMessage(org.bukkit.ChatColor.translateAlternateColorCodes('&', 
+                plugin.getConfigManager().getPrefix() + " &a✦ Waypoint placed! &fType a name in chat &7(or 'cancel'):"));
+            
+            // Play a nice sound
+            player.playSound(loc, org.bukkit.Sound.BLOCK_BEACON_ACTIVATE, 1.0f, 1.5f);
+        }
     }
 
     @EventHandler
@@ -125,6 +163,15 @@ public class WaypointListener implements Listener {
     @EventHandler
     public void onAsyncChat(AsyncChatEvent event) {
         Player player = event.getPlayer();
+        // Handle new waypoint naming
+        if (plugin.getWaypointGUI().hasPendingCreate(player.getUniqueId())) {
+            event.setCancelled(true);
+            String input = PlainTextComponentSerializer.plainText().serialize(event.message());
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                plugin.getWaypointGUI().processCreate(player, input);
+            });
+            return;
+        }
         // Handle fee change input first
         if (plugin.getWaypointGUI().hasPendingFeeChange(player.getUniqueId())) {
             event.setCancelled(true);
