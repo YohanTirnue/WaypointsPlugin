@@ -54,7 +54,15 @@ public class WaypointListener implements Listener {
             }
             
             // Consume one core from hand
-            hand.setAmount(hand.getAmount() - 1);
+            if (event.getHand() == EquipmentSlot.HAND) {
+                ItemStack main = player.getInventory().getItemInMainHand();
+                main.setAmount(main.getAmount() - 1);
+                player.getInventory().setItemInMainHand(main);
+            } else {
+                ItemStack off = player.getInventory().getItemInOffHand();
+                off.setAmount(off.getAmount() - 1);
+                player.getInventory().setItemInOffHand(off);
+            }
             
             // Create waypoint with temporary name at block location
             org.bukkit.Location loc = event.getBlock().getLocation().add(0.5, 0, 0.5); // center of block
@@ -172,7 +180,16 @@ public class WaypointListener implements Listener {
             });
             return;
         }
-        // Handle fee change input first
+        // Handle trust addition input
+        if (plugin.getWaypointGUI().hasPendingTrust(player.getUniqueId())) {
+            event.setCancelled(true);
+            String input = PlainTextComponentSerializer.plainText().serialize(event.message());
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                plugin.getWaypointGUI().processTrust(player, input);
+            });
+            return;
+        }
+        // Handle fee change input
         if (plugin.getWaypointGUI().hasPendingFeeChange(player.getUniqueId())) {
             event.setCancelled(true);
             String input = PlainTextComponentSerializer.plainText().serialize(event.message());
@@ -196,9 +213,23 @@ public class WaypointListener implements Listener {
         if (!event.getAction().isRightClick()) return;
         Player player = event.getPlayer();
         ItemStack hand = player.getInventory().getItemInMainHand();
-        if (hand.getType() != Material.AIR && plugin.getLinkManager().isLedger(hand)) {
+        if (hand.getType() == Material.AIR) {
+            hand = player.getInventory().getItemInOffHand();
+        }
+        if (hand.getType() == Material.AIR) return;
+
+        // Check Guest Pass redemption anywhere!
+        if (plugin.getLinkManager().isGuestPass(hand)) {
+            event.setCancelled(true);
+            plugin.getLinkManager().redeemGuestPass(player, hand);
+            return;
+        }
+
+        // Check Ledger linking near a waypoint
+        if (plugin.getLinkManager().isLedger(hand)) {
             Waypoint wp = plugin.getWaypointManager().getWaypointNear(player.getLocation(), 5.0);
             if (wp != null && wp.isOwner(player.getUniqueId())) {
+                event.setCancelled(true);
                 if (plugin.getLinkManager().redeemLedger(player, wp, hand)) {
                     player.sendMessage(plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("link-established"));
                 }
