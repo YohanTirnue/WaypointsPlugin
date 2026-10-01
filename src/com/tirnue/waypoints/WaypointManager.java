@@ -341,12 +341,13 @@ public class WaypointManager {
 
     public boolean hasDiscovered(UUID playerUUID, UUID waypointId) {
         Waypoint wp = getWaypoint(waypointId);
-        if (wp != null && wp.isOwner(playerUUID)) return true;
+        if (wp != null && (wp.isOwner(playerUUID) || wp.isGlobal())) return true;
         return playerDiscoveries.getOrDefault(playerUUID, Collections.emptySet()).contains(waypointId);
     }
 
     public boolean discoverWaypoint(Player player, Waypoint waypoint) {
         if (player == null || waypoint == null) return false;
+        if (waypoint.isGlobal()) return true; // Global waypoints are known server-wide, no discovery needed
         UUID pId = player.getUniqueId();
         Set<UUID> disc = playerDiscoveries.computeIfAbsent(pId, k -> new HashSet<>());
         if (disc.contains(waypoint.getId())) {

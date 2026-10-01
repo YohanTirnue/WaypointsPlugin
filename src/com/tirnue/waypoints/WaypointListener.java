@@ -142,8 +142,10 @@ public class WaypointListener implements Listener {
             return;
         }
 
-        // 2. Discover waypoint on interaction!
-        plugin.getWaypointManager().discoverWaypoint(player, wp);
+        // 2. Discover waypoint on interaction (only for non-global player waypoints)!
+        if (!wp.isGlobal()) {
+            plugin.getWaypointManager().discoverWaypoint(player, wp);
+        }
 
         // 3. Open appropriate menu
         if (wp.isOwner(player.getUniqueId())) {

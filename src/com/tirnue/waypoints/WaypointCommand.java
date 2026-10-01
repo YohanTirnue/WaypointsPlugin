@@ -161,8 +161,15 @@ public class WaypointCommand implements CommandExecutor, TabCompleter {
             if (adminSub.equals("setglobal") || adminSub.equals("removeglobal")) {
                 Waypoint wp = plugin.getWaypointManager().getWaypointNear(player.getLocation(), 5.0);
                 if (wp != null) {
-                    wp.setGlobal(adminSub.equals("setglobal"));
-                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aGlobal status set to: " + wp.isGlobal()));
+                    boolean isGlobal = adminSub.equals("setglobal");
+                    wp.setGlobal(isGlobal);
+                    plugin.getWaypointManager().saveAsync();
+                    if (plugin.getWaypointRenderer() != null) {
+                        plugin.getWaypointRenderer().updateLabel(wp.getId(), wp.getName(), wp.getOwnerName());
+                    }
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aGlobal status set to: &e" + wp.isGlobal()));
+                } else {
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cNo waypoint found within 5 blocks."));
                 }
             } else if (adminSub.equals("remove")) {
                 Waypoint wp = plugin.getWaypointManager().getWaypointNear(player.getLocation(), 5.0);

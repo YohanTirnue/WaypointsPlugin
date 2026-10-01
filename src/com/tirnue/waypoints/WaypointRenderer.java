@@ -258,7 +258,8 @@ public class WaypointRenderer {
         // =========================================================================
         Location labelLoc = loc.clone().add(0, 4.35, 0);
         TextDisplay label = world.spawn(labelLoc, TextDisplay.class, entity -> {
-            String text = "\n&b\u2726 &l" + wp.getName() + "\n&7" + wp.getOwnerName() + "\n";
+            String sub = wp.isGlobal() ? "&6\u2726 &lGLOBAL WAYPOINT &6\u2726" : "&7" + wp.getOwnerName();
+            String text = "\n&b\u2726 &l" + wp.getName() + "\n" + sub + "\n";
             entity.setText(ChatColor.translateAlternateColorCodes('&', text));
             entity.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
             entity.setBillboard(TextDisplay.Billboard.CENTER);
@@ -314,7 +315,9 @@ public class WaypointRenderer {
     public void updateLabel(UUID waypointId, String newName, String ownerName) {
         WaypointEntities entities = spawnedEntities.get(waypointId);
         if (entities != null && entities.label != null && entities.label.isValid()) {
-            String text = "\n&b\u2726 &l" + newName + "\n&7" + ownerName + "\n";
+            Waypoint wp = waypointDataCache.get(waypointId);
+            String sub = (wp != null && wp.isGlobal()) ? "&6\u2726 &lGLOBAL WAYPOINT &6\u2726" : "&7" + ownerName;
+            String text = "\n&b\u2726 &l" + newName + "\n" + sub + "\n";
             entities.label.setText(ChatColor.translateAlternateColorCodes('&', text));
         }
     }
