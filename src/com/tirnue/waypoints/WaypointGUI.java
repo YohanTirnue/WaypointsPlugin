@@ -234,19 +234,35 @@ public class WaypointGUI {
         inv.setItem(49, createItem(Material.BARRIER, "&cClose", "&7Exit menu"));
 
         int slot = 9;
+        UUID pId = player.getUniqueId();
         List<Waypoint> globalWaypoints = plugin.getWaypointManager().getGlobalWaypoints();
         for (Waypoint gWp : globalWaypoints) {
             if (slot > 26) break;
             if (gWp.getId().equals(fromWaypoint.getId())) continue;
-            double dist = fromWaypoint.distanceTo(gWp);
-            String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
-            double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, gWp);
-            inv.setItem(slot++, createWaypointItem(Material.BEACON, gWp, "&6" + gWp.getName(), 
-                "&eGlobal Waypoint",
-                "&7Distance: &f" + distStr, 
-                "&7Warp Time: &f" + String.format("%.1fs", time),
-                "",
-                "&eClick to warp"));
+            boolean discovered = plugin.getWaypointManager().hasDiscovered(pId, gWp.getId())
+                    || gWp.isOwner(pId)
+                    || player.hasPermission("tirnue.waypoints.admin");
+
+            if (discovered) {
+                double dist = fromWaypoint.distanceTo(gWp);
+                String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
+                double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, gWp);
+                inv.setItem(slot++, createWaypointItem(Material.BEACON, gWp, "&6" + gWp.getName(), 
+                    "&eGlobal Waypoint",
+                    "&7Distance: &f" + distStr, 
+                    "&7Warp Time: &f" + String.format("%.1fs", time),
+                    "",
+                    "&eClick to warp"));
+            } else {
+                inv.setItem(slot++, createWaypointItem(Material.CRYING_OBSIDIAN, gWp, "&8??? &7(Undiscovered Waypoint)", 
+                    "&8Global Waypoint",
+                    "&c✖ Not yet discovered!",
+                    "",
+                    "&7Explore the world to find and",
+                    "&7attune to this waypoint in person.",
+                    "",
+                    "&8(Locked until discovered)"));
+            }
         }
 
         slot = 27;
@@ -256,7 +272,6 @@ public class WaypointGUI {
             if (linkedWp != null) linked.add(linkedWp);
         }
 
-        UUID pId = player.getUniqueId();
         linked.sort((w1, w2) -> {
             boolean f1 = plugin.getWaypointManager().isFavorite(pId, w1.getId());
             boolean f2 = plugin.getWaypointManager().isFavorite(pId, w2.getId());
@@ -270,19 +285,34 @@ public class WaypointGUI {
         } else {
             for (Waypoint lWp : linked) {
                 if (slot > 44) break;
-                double dist = fromWaypoint.distanceTo(lWp);
-                String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
-                double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, lWp);
-                
-                boolean isFav = plugin.getWaypointManager().isFavorite(pId, lWp.getId());
-                String prefix = isFav ? "&6★ " : "&7☆ ";
-                
-                inv.setItem(slot++, createWaypointItem(Material.ENDER_EYE, lWp, prefix + "&d" + lWp.getName(),
-                    "&7Owner: &f" + lWp.getOwnerName(),
-                    "&7Distance: &f" + distStr,
-                    "&7Warp Time: &f" + String.format("%.1fs", time),
-                    "",
-                    "&eClick to warp | &7Shift-click to toggle favorite"));
+                boolean discovered = plugin.getWaypointManager().hasDiscovered(pId, lWp.getId())
+                        || lWp.isOwner(pId)
+                        || player.hasPermission("tirnue.waypoints.admin");
+
+                if (discovered) {
+                    double dist = fromWaypoint.distanceTo(lWp);
+                    String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
+                    double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, lWp);
+                    
+                    boolean isFav = plugin.getWaypointManager().isFavorite(pId, lWp.getId());
+                    String prefix = isFav ? "&6★ " : "&7☆ ";
+                    
+                    inv.setItem(slot++, createWaypointItem(Material.ENDER_EYE, lWp, prefix + "&d" + lWp.getName(),
+                        "&7Owner: &f" + lWp.getOwnerName(),
+                        "&7Distance: &f" + distStr,
+                        "&7Warp Time: &f" + String.format("%.1fs", time),
+                        "",
+                        "&eClick to warp | &7Shift-click to toggle favorite"));
+                } else {
+                    inv.setItem(slot++, createWaypointItem(Material.STRUCTURE_VOID, lWp, "&8??? &7(Undiscovered Link)",
+                        "&7Owner: &8Unknown",
+                        "&c✖ Not yet discovered!",
+                        "",
+                        "&7Explore the world to find and",
+                        "&7attune to this waypoint in person.",
+                        "",
+                        "&8(Locked until discovered)"));
+                }
             }
         }
         
@@ -633,6 +663,15 @@ public class WaypointGUI {
                             UUID targetId = UUID.fromString(targetIdStr);
                             Waypoint dest = plugin.getWaypointManager().getWaypoint(targetId);
                             if (dest != null) {
+                                boolean discovered = plugin.getWaypointManager().hasDiscovered(player.getUniqueId(), dest.getId())
+                                        || dest.isOwner(player.getUniqueId())
+                                        || player.hasPermission("tirnue.waypoints.admin");
+                                if (!discovered) {
+                                    player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.7f);
+                                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cYou must discover and attune to this waypoint in person before you can warp to it!"));
+                                    return;
+                                }
+
                                 if (event.isShiftClick()) {
                                     plugin.getWaypointManager().toggleFavorite(player.getUniqueId(), dest.getId());
                                     openTravelMenu(player, wp);

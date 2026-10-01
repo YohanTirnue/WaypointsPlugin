@@ -248,6 +248,7 @@ public class LinkManager {
         if (dest == null) dest = source.toBukkitLocation();
         if (dest != null) {
             redeemer.teleport(dest);
+            plugin.getWaypointManager().discoverWaypoint(redeemer, source);
             // Arrival BOOM FX
             org.bukkit.World destWorld = dest.getWorld();
             if (destWorld != null) {

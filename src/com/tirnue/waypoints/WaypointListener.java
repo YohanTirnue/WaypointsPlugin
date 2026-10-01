@@ -2,9 +2,14 @@ package com.tirnue.waypoints;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Chunk;
+import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -24,7 +29,11 @@ import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.meta.CompassMeta;
+import org.bukkit.inventory.meta.ItemMeta;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class WaypointListener implements Listener {
@@ -32,6 +41,7 @@ public class WaypointListener implements Listener {
 
     public WaypointListener(TirnueWaypoints plugin) {
         this.plugin = plugin;
+        startCompassTrackingTask();
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -104,46 +114,99 @@ public class WaypointListener implements Listener {
     @EventHandler
     public void onPlayerInteractAtEntity(PlayerInteractAtEntityEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) return;
-        Entity entity = event.getRightClicked();
-        if (plugin.getWaypointRenderer().isWaypointInteraction(entity)) {
-            UUID wpId = plugin.getWaypointRenderer().getWaypointIdFromInteraction(entity);
-            if (wpId != null) {
-                Waypoint wp = plugin.getWaypointManager().getWaypoint(wpId);
-                if (wp != null) {
-                    Player player = event.getPlayer();
-                    if (wp.isOwner(player.getUniqueId())) {
-                        plugin.getWaypointGUI().openManagementMenu(player, wp);
-                    } else if (wp.isTrusted(player.getUniqueId()) || wp.isGlobal()) {
-                        plugin.getWaypointGUI().openTravelMenu(player, wp);
-                    } else {
-                        player.sendMessage(plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("no-permission"));
-                    }
-                }
-            }
-        }
+        handleWaypointInteraction(event.getPlayer(), event.getRightClicked(), event);
     }
 
     @EventHandler
     public void onPlayerInteractEntity(org.bukkit.event.player.PlayerInteractEntityEvent event) {
         if (event instanceof PlayerInteractAtEntityEvent) return;
         if (event.getHand() != EquipmentSlot.HAND) return;
-        Entity entity = event.getRightClicked();
-        if (plugin.getWaypointRenderer().isWaypointInteraction(entity)) {
-            UUID wpId = plugin.getWaypointRenderer().getWaypointIdFromInteraction(entity);
-            if (wpId != null) {
-                Waypoint wp = plugin.getWaypointManager().getWaypoint(wpId);
-                if (wp != null) {
-                    Player player = event.getPlayer();
-                    if (wp.isOwner(player.getUniqueId())) {
-                        plugin.getWaypointGUI().openManagementMenu(player, wp);
-                    } else if (wp.isTrusted(player.getUniqueId()) || wp.isGlobal()) {
-                        plugin.getWaypointGUI().openTravelMenu(player, wp);
-                    } else {
-                        player.sendMessage(plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("no-permission"));
+        handleWaypointInteraction(event.getPlayer(), event.getRightClicked(), event);
+    }
+
+    private void handleWaypointInteraction(Player player, Entity entity, org.bukkit.event.Cancellable event) {
+        if (!plugin.getWaypointRenderer().isWaypointInteraction(entity)) return;
+        UUID wpId = plugin.getWaypointRenderer().getWaypointIdFromInteraction(entity);
+        if (wpId == null) return;
+        Waypoint wp = plugin.getWaypointManager().getWaypoint(wpId);
+        if (wp == null) return;
+
+        // 1. Check if player is holding a compass to attune it!
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand.getType() != Material.COMPASS && hand.getType() != Material.RECOVERY_COMPASS) {
+            hand = player.getInventory().getItemInOffHand();
+        }
+        if (hand.getType() == Material.COMPASS || hand.getType() == Material.RECOVERY_COMPASS) {
+            event.setCancelled(true);
+            attuneCompass(player, wp, hand);
+            return;
+        }
+
+        // 2. Discover waypoint on interaction!
+        plugin.getWaypointManager().discoverWaypoint(player, wp);
+
+        // 3. Open appropriate menu
+        if (wp.isOwner(player.getUniqueId())) {
+            plugin.getWaypointGUI().openManagementMenu(player, wp);
+        } else if (wp.isTrusted(player.getUniqueId()) || wp.isGlobal()) {
+            plugin.getWaypointGUI().openTravelMenu(player, wp);
+        } else {
+            player.sendMessage(plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("no-permission"));
+        }
+    }
+
+    private void attuneCompass(Player player, Waypoint wp, ItemStack compass) {
+        ItemMeta meta = compass.getItemMeta();
+        if (meta instanceof CompassMeta cMeta) {
+            cMeta.setLodestone(wp.toBukkitLocation());
+            cMeta.setLodestoneTracked(false);
+            cMeta.setDisplayName(ChatColor.translateAlternateColorCodes('&', "&b\u2726 Waystone Compass: &f" + wp.getName()));
+            List<String> lore = new ArrayList<>();
+            lore.add(ChatColor.translateAlternateColorCodes('&', "&7Attuned to: &e" + wp.getName()));
+            lore.add(ChatColor.translateAlternateColorCodes('&', "&7World: &f" + wp.getWorldName()));
+            lore.add(ChatColor.translateAlternateColorCodes('&', "&7Coords: &f" + (int)wp.getX() + ", " + (int)wp.getY() + ", " + (int)wp.getZ()));
+            lore.add("");
+            lore.add(ChatColor.translateAlternateColorCodes('&', "&eHold in hand to track distance!"));
+            cMeta.setLore(lore);
+            compass.setItemMeta(cMeta);
+
+            player.playSound(player.getLocation(), Sound.ITEM_LODESTONE_COMPASS_LOCK, 1.0f, 1.2f);
+            player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 1.0f, 1.5f);
+            ParticleUtil.spawn(player.getWorld(), Particle.ENCHANT, player.getLocation().add(0, 1.0, 0), 25, 0.4, 0.5, 0.4, 0.2);
+            player.sendMessage(plugin.getConfigManager().getPrefix() + ChatColor.translateAlternateColorCodes('&',
+                    " &a\u2726 Compass successfully attuned to &e" + wp.getName() + "&a! The needle will guide your journey."));
+        }
+    }
+
+    private void startCompassTrackingTask() {
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (plugin.getTeleportManager().isCurrentlyTeleporting(p.getUniqueId())) continue;
+                ItemStack main = p.getInventory().getItemInMainHand();
+                ItemStack off = p.getInventory().getItemInOffHand();
+                ItemStack compass = (main.getType() == Material.COMPASS || main.getType() == Material.RECOVERY_COMPASS) ? main :
+                        ((off.getType() == Material.COMPASS || off.getType() == Material.RECOVERY_COMPASS) ? off : null);
+
+                if (compass != null && compass.hasItemMeta() && compass.getItemMeta() instanceof CompassMeta cMeta) {
+                    if (cMeta.hasLodestone() && cMeta.hasDisplayName() && cMeta.getDisplayName().contains("Waystone Compass")) {
+                        Location target = cMeta.getLodestone();
+                        if (target != null && target.getWorld() != null) {
+                            String wpName = cMeta.getDisplayName().replace("\u2726", "").replace("Waystone Compass:", "").trim();
+                            if (target.getWorld().equals(p.getWorld())) {
+                                int dist = (int) p.getLocation().distance(target);
+                                String bar = ChatColor.translateAlternateColorCodes('&',
+                                        "&b\u2726 &f" + wpName + " &8▸ &e" + dist + " blocks away &b\u2726");
+                                p.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(bar));
+                            } else {
+                                String bar = ChatColor.translateAlternateColorCodes('&',
+                                        "&b\u2726 &f" + wpName + " &8▸ &7Different Dimension &b\u2726");
+                                p.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(bar));
+                            }
+                        }
                     }
                 }
             }
-        }
+        }, 20L, 20L);
     }
 
     // HIGH fix: Check if player is teleporting FIRST before doing any math

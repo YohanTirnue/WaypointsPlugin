@@ -17,12 +17,15 @@ public class WaypointManager {
     private final File dataFile;
     private final Map<UUID, Set<UUID>> playerFavorites = new HashMap<>();
     private final File favoritesFile;
+    private final Map<UUID, Set<UUID>> playerDiscoveries = new HashMap<>();
+    private final File discoveriesFile;
 
     public WaypointManager(JavaPlugin plugin, ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
         this.dataFile = new File(plugin.getDataFolder(), "waypoints.yml");
         this.favoritesFile = new File(plugin.getDataFolder(), "favorites.yml");
+        this.discoveriesFile = new File(plugin.getDataFolder(), "discoveries.yml");
     }
 
     public Waypoint createWaypoint(Player owner, String name, Location loc) {
@@ -207,6 +210,8 @@ public class WaypointManager {
         } catch (IOException e) {
             plugin.getLogger().severe("Could not save waypoints to " + dataFile.getName());
         }
+        saveFavoritesSync();
+        saveDiscoveriesSync();
     }
 
     /**
@@ -268,6 +273,7 @@ public class WaypointManager {
 
     public void load() {
         loadFavorites(); // Always load favorites, even on first run
+        loadDiscoveries();
         if (!dataFile.exists()) return;
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(dataFile);
         waypoints.clear();
@@ -330,6 +336,92 @@ public class WaypointManager {
         }
         // Always load favorites, even if waypoints file didn't exist
         loadFavorites();
+        loadDiscoveries();
+    }
+
+    public boolean hasDiscovered(UUID playerUUID, UUID waypointId) {
+        Waypoint wp = getWaypoint(waypointId);
+        if (wp != null && wp.isOwner(playerUUID)) return true;
+        return playerDiscoveries.getOrDefault(playerUUID, Collections.emptySet()).contains(waypointId);
+    }
+
+    public boolean discoverWaypoint(Player player, Waypoint waypoint) {
+        if (player == null || waypoint == null) return false;
+        UUID pId = player.getUniqueId();
+        Set<UUID> disc = playerDiscoveries.computeIfAbsent(pId, k -> new HashSet<>());
+        if (disc.contains(waypoint.getId())) {
+            return false;
+        }
+
+        disc.add(waypoint.getId());
+        saveDiscoveries();
+
+        // If player is the owner, quietly mark discovered without popup
+        if (waypoint.isOwner(pId)) {
+            return true;
+        }
+
+        // Grand discovery celebration!
+        player.sendTitle(
+                org.bukkit.ChatColor.translateAlternateColorCodes('&', "&b\u2726 &lWAYPOINT DISCOVERED &b\u2726"),
+                org.bukkit.ChatColor.translateAlternateColorCodes('&', "&7Attuned to &f" + waypoint.getName()),
+                10, 50, 15
+        );
+        player.playSound(player.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.85f, 1.2f);
+        player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_AMETHYST_BLOCK_CHIME, 1.0f, 1.4f);
+        player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_BEACON_POWER_SELECT, 0.9f, 1.3f);
+        ParticleUtil.spawn(player.getWorld(), org.bukkit.Particle.TOTEM_OF_UNDYING, player.getLocation().add(0, 1.0, 0), 35, 0.6, 0.7, 0.6, 0.2);
+        player.sendMessage(org.bukkit.ChatColor.translateAlternateColorCodes('&',
+                configManager.getPrefix() + " &b\u2726 &lWaypoint Discovered! &7You attuned to &f" + waypoint.getName() + "&7. Added to your travel catalog!"));
+        return true;
+    }
+
+    public void saveDiscoveries() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        for (Map.Entry<UUID, Set<UUID>> entry : playerDiscoveries.entrySet()) {
+            List<String> list = new ArrayList<>();
+            for (UUID w : entry.getValue()) list.add(w.toString());
+            yaml.set(entry.getKey().toString(), list);
+        }
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                yaml.save(discoveriesFile);
+            } catch (IOException e) {
+                plugin.getLogger().severe("Could not save discoveries to " + discoveriesFile.getName());
+            }
+        });
+    }
+
+    public void saveDiscoveriesSync() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        for (Map.Entry<UUID, Set<UUID>> entry : playerDiscoveries.entrySet()) {
+            List<String> list = new ArrayList<>();
+            for (UUID w : entry.getValue()) list.add(w.toString());
+            yaml.set(entry.getKey().toString(), list);
+        }
+        try {
+            yaml.save(discoveriesFile);
+        } catch (IOException e) {
+            plugin.getLogger().severe("Could not save discoveries to " + discoveriesFile.getName());
+        }
+    }
+
+    public void loadDiscoveries() {
+        if (!discoveriesFile.exists()) return;
+        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(discoveriesFile);
+        playerDiscoveries.clear();
+        for (String key : yaml.getKeys(false)) {
+            try {
+                UUID playerUUID = UUID.fromString(key);
+                Set<UUID> disc = new HashSet<>();
+                for (String wStr : yaml.getStringList(key)) {
+                    disc.add(UUID.fromString(wStr));
+                }
+                playerDiscoveries.put(playerUUID, disc);
+            } catch (Exception e) {
+                plugin.getLogger().warning("Failed to load discoveries for " + key);
+            }
+        }
     }
 
     public void toggleFavorite(UUID playerUUID, UUID waypointId) {
@@ -364,6 +456,20 @@ public class WaypointManager {
                 plugin.getLogger().severe("Could not save favorites to " + favoritesFile.getName());
             }
         });
+    }
+
+    public void saveFavoritesSync() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        for (Map.Entry<UUID, Set<UUID>> entry : playerFavorites.entrySet()) {
+            List<String> list = new ArrayList<>();
+            for (UUID w : entry.getValue()) list.add(w.toString());
+            yaml.set(entry.getKey().toString(), list);
+        }
+        try {
+            yaml.save(favoritesFile);
+        } catch (IOException e) {
+            plugin.getLogger().severe("Could not save favorites to " + favoritesFile.getName());
+        }
     }
 
     public void loadFavorites() {
