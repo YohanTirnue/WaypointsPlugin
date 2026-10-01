@@ -149,24 +149,29 @@ public class WaypointRenderer {
     }
 
     public void tickBeaconEffects() {
-        for (Map.Entry<UUID, WaypointEntities> entry : spawnedEntities.entrySet()) {
-            UUID wpId = entry.getKey();
-            Waypoint wp = waypointDataCache.get(wpId);
-            if (wp == null) continue;
-            
-            Location loc = entry.getValue().base.getLocation();
-            if (loc.getWorld() == null) continue;
-            
-            for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
-                if (player.getWorld().equals(loc.getWorld()) && player.getLocation().distanceSquared(loc) <= 2500) {
-                    if (wp.isOwner(player.getUniqueId()) || wp.isTrusted(player.getUniqueId())) {
-                        for (int i = 0; i < 3; i++) {
-                            double offsetX = (Math.random() - 0.5) * 0.2;
-                            double offsetY = 2.5 + Math.random() * 2.5;
-                            double offsetZ = (Math.random() - 0.5) * 0.2;
-                            player.spawnParticle(org.bukkit.Particle.SOUL_FIRE_FLAME, loc.clone().add(offsetX, offsetY, offsetZ), 1, 0, 0, 0, 0);
-                        }
-                    }
+        if (spawnedEntities.isEmpty()) return;
+        // Player-first iteration: O(P) outer loop instead of O(W*P)
+        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
+            for (Map.Entry<UUID, WaypointEntities> entry : spawnedEntities.entrySet()) {
+                Waypoint wp = waypointDataCache.get(entry.getKey());
+                if (wp == null) continue;
+                if (!wp.isOwner(player.getUniqueId()) && !wp.isTrusted(player.getUniqueId())) continue;
+
+                WaypointEntities entities = entry.getValue();
+                if (entities.base == null || !entities.base.isValid()) continue;
+                if (!entities.base.getWorld().equals(player.getWorld())) continue;
+
+                Location baseLoc = entities.base.getLocation();
+                if (player.getLocation().distanceSquared(baseLoc) > 2500) continue;
+
+                // Spawn beacon beam particles (player-specific, no server broadcast)
+                double bx = baseLoc.getX(), by = baseLoc.getY(), bz = baseLoc.getZ();
+                for (int i = 0; i < 3; i++) {
+                    player.spawnParticle(org.bukkit.Particle.SOUL_FIRE_FLAME,
+                            bx + (Math.random() - 0.5) * 0.2,
+                            by + 2.5 + Math.random() * 2.5,
+                            bz + (Math.random() - 0.5) * 0.2,
+                            1, 0, 0, 0, 0);
                 }
             }
         }
@@ -214,6 +219,12 @@ public class WaypointRenderer {
                             p = config.getAmbientParticle();
                         }
                         loc.getWorld().spawnParticle(p, loc, 2, 0.2, 0.2, 0.2, 0.01);
+                    }
+                    
+                    // Decaying visual: red particles if decaying
+                    if (wp != null && wp.isDecaying()) {
+                        Location decayLoc = crystal.getLocation();
+                        decayLoc.getWorld().spawnParticle(org.bukkit.Particle.SMOKE, decayLoc, 3, 0.3, 0.3, 0.3, 0.01);
                     }
                 }
             }

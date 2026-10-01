@@ -15,6 +15,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
@@ -29,6 +30,28 @@ public class WaypointListener implements Listener {
 
     public WaypointListener(TirnueWaypoints plugin) {
         this.plugin = plugin;
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        if (!plugin.getConfig().getBoolean("decay.notify-on-login", true)) return;
+        Player player = event.getPlayer();
+        // Delay 3 seconds so it's not lost in join spam
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!player.isOnline()) return;
+            java.util.List<Waypoint> decaying = new java.util.ArrayList<>();
+            for (Waypoint wp : plugin.getWaypointManager().getWaypointsByOwner(player.getUniqueId())) {
+                if (wp.isDecaying()) {
+                    wp.setDecaying(false);
+                    wp.setDecayStartTime(0);
+                    decaying.add(wp);
+                }
+            }
+            if (!decaying.isEmpty()) {
+                player.sendMessage(plugin.getConfigManager().getPrefix() + org.bukkit.ChatColor.translateAlternateColorCodes('&', "&aWelcome back! Your " + decaying.size() + " waypoint(s) are no longer decaying."));
+                plugin.getWaypointManager().saveAsync();
+            }
+        }, 60L);
     }
 
     @EventHandler

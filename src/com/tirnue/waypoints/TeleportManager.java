@@ -188,7 +188,12 @@ public class TeleportManager {
                 double taxRate = plugin.getConfig().getDouble("rent.server-tax-percent", 10) / 100.0;
                 double ownerCut = fee * (1.0 - taxRate);
                 econ.withdrawPlayer(player, fee);
-                econ.depositPlayer(org.bukkit.Bukkit.getOfflinePlayer(teleport.to.getOwnerUUID()), ownerCut);
+                // Deposit owner cut async to avoid Bukkit.getOfflinePlayer() blocking main thread
+                final UUID ownerUUID = teleport.to.getOwnerUUID();
+                final double finalOwnerCut = ownerCut;
+                org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                    econ.depositPlayer(org.bukkit.Bukkit.getOfflinePlayer(ownerUUID), finalOwnerCut);
+                });
             }
         }
 
@@ -198,45 +203,48 @@ public class TeleportManager {
             @Override
             public void run() {
                 animTick++;
-                if (animTick <= 20) {
-                    // Departure dissolve: particles spiral inward
-                    double radius = 2.0 * (1.0 - animTick / 20.0); // shrinks from 2.0 to 0
-                    Location pLoc = player.getLocation().add(0, 1, 0);
-                    for (int i = 0; i < 8; i++) {
-                        double angle = 2 * Math.PI * i / 8 + (animTick * 0.5);
-                        double x = Math.cos(angle) * radius;
-                        double z = Math.sin(angle) * radius;
-                        pLoc.getWorld().spawnParticle(config.getDepartureParticle(), pLoc.getX() + x, pLoc.getY() + animTick * 0.1, pLoc.getZ() + z, 1, 0, 0, 0, 0);
-                    }
-                    // Final frame: teleport the player
-                    if (animTick == 20) {
-                        player.getWorld().playSound(player.getLocation(), config.getDepartureSound(), 1.0f, 1.0f);
-                        Location dest = teleport.to.toBukkitLocation();
-                        if (dest != null) {
-                            player.teleport(dest);
-                            // Log activity on both waypoints
-                            teleport.from.addActivity(player.getName(), player.getUniqueId(), "WARP_FROM", teleport.to.getName());
-                            teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
-                            // Arrival burst: particles expand outward
-                            new BukkitRunnable() {
-                                int arrivalTick = 0;
-                                @Override
-                                public void run() {
-                                    arrivalTick++;
-                                    double r = arrivalTick * 0.15;
-                                    for (int i = 0; i < 10; i++) {
-                                        double a = 2 * Math.PI * i / 10;
-                                        dest.getWorld().spawnParticle(config.getArrivalParticle(), dest.getX() + Math.cos(a) * r, dest.getY() + 1, dest.getZ() + Math.sin(a) * r, 1, 0, 0, 0, 0);
-                                    }
-                                    if (arrivalTick >= 10) {
-                                        dest.getWorld().playSound(dest, config.getArrivalSound(), 1.0f, 1.0f);
-                                        this.cancel();
-                                    }
+                // Safety: cancel if player disconnected or tick exceeded
+                if (!player.isOnline() || animTick > 20) {
+                    this.cancel();
+                    return;
+                }
+                // Departure dissolve: particles spiral inward
+                double radius = 2.0 * (1.0 - animTick / 20.0);
+                Location pLoc = player.getLocation().add(0, 1, 0);
+                for (int i = 0; i < 8; i++) {
+                    double angle = 2 * Math.PI * i / 8 + (animTick * 0.5);
+                    double x = Math.cos(angle) * radius;
+                    double z = Math.sin(angle) * radius;
+                    pLoc.getWorld().spawnParticle(config.getDepartureParticle(), pLoc.getX() + x, pLoc.getY() + animTick * 0.1, pLoc.getZ() + z, 1, 0, 0, 0, 0);
+                }
+                // Final frame: teleport the player
+                if (animTick == 20) {
+                    player.getWorld().playSound(player.getLocation(), config.getDepartureSound(), 1.0f, 1.0f);
+                    Location dest = teleport.to.toBukkitLocation();
+                    if (dest != null) {
+                        player.teleport(dest);
+                        // Log activity on both waypoints
+                        teleport.from.addActivity(player.getName(), player.getUniqueId(), "WARP_FROM", teleport.to.getName());
+                        teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
+                        // Arrival burst: particles expand outward
+                        new BukkitRunnable() {
+                            int arrivalTick = 0;
+                            @Override
+                            public void run() {
+                                arrivalTick++;
+                                double r = arrivalTick * 0.15;
+                                for (int i = 0; i < 10; i++) {
+                                    double a = 2 * Math.PI * i / 10;
+                                    dest.getWorld().spawnParticle(config.getArrivalParticle(), dest.getX() + Math.cos(a) * r, dest.getY() + 1, dest.getZ() + Math.sin(a) * r, 1, 0, 0, 0, 0);
                                 }
-                            }.runTaskTimer(plugin, 0L, 1L);
-                        }
-                        this.cancel();
+                                if (arrivalTick >= 10) {
+                                    dest.getWorld().playSound(dest, config.getArrivalSound(), 1.0f, 1.0f);
+                                    this.cancel();
+                                }
+                            }
+                        }.runTaskTimer(plugin, 0L, 1L);
                     }
+                    this.cancel();
                 }
             }
         }.runTaskTimer(plugin, 0L, 1L);

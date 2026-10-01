@@ -133,6 +133,15 @@ public class Waypoint {
     public double getUsageFee() { return usageFee; }
     public void setUsageFee(double usageFee) { this.usageFee = usageFee; }
 
+    private boolean decaying = false;
+    private long decayStartTime = 0;
+
+    public boolean isDecaying() { return decaying; }
+    public void setDecaying(boolean decaying) { this.decaying = decaying; }
+
+    public long getDecayStartTime() { return decayStartTime; }
+    public void setDecayStartTime(long decayStartTime) { this.decayStartTime = decayStartTime; }
+
     public boolean isOwner(UUID playerUUID) {
         return ownerUUID != null && ownerUUID.equals(playerUUID);
     }

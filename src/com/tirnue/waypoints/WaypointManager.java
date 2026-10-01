@@ -153,6 +153,53 @@ public class WaypointManager {
         return waypoints.values();
     }
 
+    public void tickDecay() {
+        if (!plugin.getConfig().getBoolean("decay.enabled", false)) return;
+        
+        int inactiveDays = plugin.getConfig().getInt("decay.inactive-days", 30);
+        int graceDays = plugin.getConfig().getInt("decay.decay-grace-days", 7);
+        long now = System.currentTimeMillis();
+        long inactiveThreshold = now - (inactiveDays * 24L * 60L * 60L * 1000L);
+        long graceMs = graceDays * 24L * 60L * 60L * 1000L;
+        
+        List<UUID> toDelete = new ArrayList<>();
+        
+        for (Waypoint wp : new ArrayList<>(waypoints.values())) {
+            if (wp.isGlobal()) continue; // Global waypoints never decay
+            
+            org.bukkit.OfflinePlayer owner = org.bukkit.Bukkit.getOfflinePlayer(wp.getOwnerUUID());
+            long lastPlayed = owner.getLastPlayed();
+            if (lastPlayed == 0) continue; // Never played / unknown
+            
+            if (lastPlayed < inactiveThreshold) {
+                // Owner is inactive
+                if (!wp.isDecaying()) {
+                    wp.setDecaying(true);
+                    wp.setDecayStartTime(now);
+                    plugin.getLogger().info("Waypoint '" + wp.getName() + "' owned by " + wp.getOwnerName() + " is now decaying.");
+                } else if (now - wp.getDecayStartTime() > graceMs) {
+                    // Grace period expired - destroy
+                    toDelete.add(wp.getId());
+                    plugin.getLogger().info("Waypoint '" + wp.getName() + "' owned by " + wp.getOwnerName() + " has been destroyed by decay.");
+                }
+            } else {
+                // Owner came back - cancel decay
+                if (wp.isDecaying()) {
+                    wp.setDecaying(false);
+                    wp.setDecayStartTime(0);
+                }
+            }
+        }
+        
+        for (UUID id : toDelete) {
+            deleteWaypoint(id);
+        }
+        
+        if (!toDelete.isEmpty()) {
+            saveAsync();
+        }
+    }
+
     public void save() {
         YamlConfiguration yaml = buildYaml();
         try {
@@ -195,6 +242,8 @@ public class WaypointManager {
             yaml.set(key + ".crystalMaterial", wp.getCrystalMaterial());
             yaml.set(key + ".tier", wp.getTier());
             yaml.set(key + ".usageFee", wp.getUsageFee());
+            yaml.set(key + ".decaying", wp.isDecaying());
+            yaml.set(key + ".decayStartTime", wp.getDecayStartTime());
             List<String> trusted = new ArrayList<>();
             for (UUID u : wp.getTrustedPlayers()) trusted.add(u.toString());
             yaml.set(key + ".trustedPlayers", trusted);
@@ -218,6 +267,7 @@ public class WaypointManager {
     }
 
     public void load() {
+        loadFavorites(); // Always load favorites, even on first run
         if (!dataFile.exists()) return;
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(dataFile);
         waypoints.clear();
@@ -239,6 +289,8 @@ public class WaypointManager {
                 String crystalMaterial = yaml.getString(key + ".crystalMaterial", "AMETHYST_SHARD");
                 String tier = yaml.getString(key + ".tier", "BASIC");
                 double usageFee = yaml.getDouble(key + ".usageFee", 0.0);
+                boolean decaying = yaml.getBoolean(key + ".decaying", false);
+                long decayStartTime = yaml.getLong(key + ".decayStartTime", 0);
                 
                 Set<UUID> trustedPlayers = new HashSet<>();
                 for (String uStr : yaml.getStringList(key + ".trustedPlayers")) {
@@ -257,6 +309,8 @@ public class WaypointManager {
                 wp.setCrystalMaterial(crystalMaterial);
                 wp.setTier(tier);
                 wp.setUsageFee(usageFee);
+                wp.setDecaying(decaying);
+                wp.setDecayStartTime(decayStartTime);
                 
                 if (yaml.contains(key + ".activityLog")) {
                     for (String iStr : yaml.getConfigurationSection(key + ".activityLog").getKeys(false)) {
@@ -274,6 +328,7 @@ public class WaypointManager {
                 plugin.getLogger().warning("Failed to load waypoint with key " + key + ": " + e.getMessage());
             }
         }
+        // Always load favorites, even if waypoints file didn't exist
         loadFavorites();
     }
 

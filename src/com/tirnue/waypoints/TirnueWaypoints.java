@@ -42,6 +42,11 @@ public class TirnueWaypoints extends JavaPlugin {
             waypointRenderer.startAnimationTask();
         }, 1L);
         
+        // Decay check every 5 minutes
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+            waypointManager.tickDecay();
+        }, 6000L, 6000L);
+        
         getLogger().info("TirnueWaypoints enabled!");
     }
 

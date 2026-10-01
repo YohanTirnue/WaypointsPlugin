@@ -35,6 +35,10 @@ public class WaypointGUI {
         }
         try {
             double fee = Double.parseDouble(input);
+            if (Double.isNaN(fee) || Double.isInfinite(fee)) {
+                player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cInvalid number. Fee change cancelled."));
+                return;
+            }
             double maxFee = plugin.getConfig().getDouble("rent.max-fee", 1000.0);
             if (fee < 0 || fee > maxFee) {
                 player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cFee must be between 0 and " + maxFee + "."));

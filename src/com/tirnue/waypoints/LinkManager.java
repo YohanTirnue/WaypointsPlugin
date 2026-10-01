@@ -129,6 +129,23 @@ public class LinkManager {
             return false; // Cannot link to itself
         }
 
+        // World link restriction check
+        if (plugin.getConfig().getBoolean("world-restrictions.enabled", false)) {
+            String worldA = source.getWorldName();
+            String worldB = destination.getWorldName();
+            List<String> blocked = plugin.getConfig().getStringList("world-restrictions.blocked-pairs");
+            for (String pair : blocked) {
+                String[] parts = pair.split(":");
+                if (parts.length == 2) {
+                    if ((worldA.equalsIgnoreCase(parts[0]) && worldB.equalsIgnoreCase(parts[1])) ||
+                        (worldA.equalsIgnoreCase(parts[1]) && worldB.equalsIgnoreCase(parts[0]))) {
+                        redeemer.sendMessage(configManager.getPrefix() + org.bukkit.ChatColor.translateAlternateColorCodes('&', "&cThese worlds cannot be linked!"));
+                        return false;
+                    }
+                }
+            }
+        }
+
         // Link the waypoints
         waypointManager.linkWaypoints(source.getId(), destination.getId());
         
