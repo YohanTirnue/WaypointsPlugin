@@ -10,6 +10,7 @@ import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Display;
+import org.bukkit.entity.EnderCrystal;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Interaction;
 import org.bukkit.entity.ItemDisplay;
@@ -45,12 +46,17 @@ public class WaypointRenderer {
         this.wpIdKey = new NamespacedKey(plugin, "tirnue_wp_id");
     }
 
+    public static boolean isEndCrystalType(String name) {
+        return name == null || name.isEmpty() || "END_CRYSTAL".equalsIgnoreCase(name);
+    }
+
     /**
-     * Maps any material or item name (including END_CRYSTAL, AMETHYST_SHARD, etc.)
-     * to a valid 3D block material so crystals never look like flat 2D dropped items.
+     * Maps material/item names to valid 3D blocks so they never render as flat 2D dropped items.
      */
     public static Material toBlockMaterial(String name) {
-        if (name == null || name.isEmpty()) return Material.AMETHYST_CLUSTER;
+        if (name == null || name.isEmpty() || "END_CRYSTAL".equalsIgnoreCase(name)) {
+            return Material.AMETHYST_CLUSTER;
+        }
         Material mat;
         try {
             mat = Material.valueOf(name.toUpperCase());
@@ -61,7 +67,6 @@ public class WaypointRenderer {
             return mat;
         }
         switch (mat) {
-            case END_CRYSTAL:
             case AMETHYST_SHARD:
                 return Material.AMETHYST_CLUSTER;
             case DIAMOND:
@@ -93,7 +98,7 @@ public class WaypointRenderer {
         World world = loc.getWorld();
         UUID wpId = wp.getId();
         List<BlockDisplay> structureBlocks = new ArrayList<>();
-        List<BlockDisplay> crystals = new ArrayList<>(3);
+        List<Entity> crystals = new ArrayList<>(3);
 
         // =========================================================================
         // 1. 3x3 Wide Stone Foundation Platform (Ref: waystonereference.png)
@@ -149,10 +154,8 @@ public class WaypointRenderer {
         });
 
         // Glowing Green Stained Glass Core Chamber (Y: 0.90 -> 2.25, height: 1.35m)
-        // Inner glowing light
         structureBlocks.add(spawnBlockTier(world, loc, Material.SEA_LANTERN,
                 0.45f, 1.10f, 0.45f, 0.0f, 0.95f, 0.0f, wpId));
-        // Outer translucent green glass chamber
         structureBlocks.add(spawnBlockTier(world, loc, Material.LIME_STAINED_GLASS,
                 0.72f, 1.35f, 0.72f, 0.0f, 0.90f, 0.0f, wpId));
 
@@ -182,46 +185,78 @@ public class WaypointRenderer {
                 0.65f, 0.20f, 0.65f, 0.0f, 2.85f, 0.0f, wpId));
 
         // =========================================================================
-        // 3. Top Floating Relic: 3D Block Crystal (Y: 3.40)
+        // 3. Top Floating Relic & 4. Three Orbiting Items
         // =========================================================================
-        Material crystalBlockMat = toBlockMaterial(wp.getCrystalMaterial());
-        Location topRelicLoc = loc.clone().add(0, 3.40, 0);
+        String matStr = wp.getCrystalMaterial();
+        boolean isEndCrystal = isEndCrystalType(matStr);
+        Entity topRelic;
 
-        BlockDisplay topRelic = world.spawn(topRelicLoc, BlockDisplay.class, entity -> {
-            entity.setBlock(crystalBlockMat.createBlockData());
-            entity.setInterpolationDuration(2);
-            entity.setInterpolationDelay(0);
-            Matrix4f mat = new Matrix4f()
-                    .scale(0.65f, 0.65f, 0.65f)
-                    .translate(-0.5f, -0.5f, -0.5f);
-            entity.setTransformationMatrix(mat);
-            entity.setPersistent(false);
-            entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
-        });
+        if (isEndCrystal) {
+            // True 3D End Crystal at top of tower!
+            Location topRelicLoc = loc.clone().add(0, 3.10, 0);
+            topRelic = world.spawn(topRelicLoc, EnderCrystal.class, crystal -> {
+                crystal.setShowingBottom(false);
+                crystal.setInvulnerable(true);
+                crystal.setGravity(false);
+                crystal.setPersistent(false);
+                crystal.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
+            });
 
-        // =========================================================================
-        // 4. Three Floating Orbiting 3D Blocks (Never looking like flat dropped items)
-        // =========================================================================
-        Location orbitCenterLoc = loc.clone().add(0, 1.75, 0);
-        for (int i = 0; i < 3; i++) {
-            BlockDisplay orbitBlock = world.spawn(orbitCenterLoc, BlockDisplay.class, entity -> {
+            // 3 Orbiting 3D End Crystals around the 3x3 perimeter!
+            float orbitRadius = 2.10f;
+            for (int i = 0; i < 3; i++) {
+                float angle = (float) (i * 2.0 * Math.PI / 3.0);
+                double cx = loc.getX() + Math.cos(angle) * orbitRadius;
+                double cz = loc.getZ() + Math.sin(angle) * orbitRadius;
+                double cy = loc.getY() + 1.85;
+                Location cLoc = new Location(world, cx, cy, cz);
+                EnderCrystal orbitCrystal = world.spawn(cLoc, EnderCrystal.class, crystal -> {
+                    crystal.setShowingBottom(false);
+                    crystal.setInvulnerable(true);
+                    crystal.setGravity(false);
+                    crystal.setPersistent(false);
+                    crystal.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
+                });
+                crystals.add(orbitCrystal);
+            }
+        } else {
+            // 3D BlockDisplay with the chosen block material!
+            Material crystalBlockMat = toBlockMaterial(matStr);
+
+            Location topRelicLoc = loc.clone().add(0, 3.40, 0);
+            topRelic = world.spawn(topRelicLoc, BlockDisplay.class, entity -> {
                 entity.setBlock(crystalBlockMat.createBlockData());
                 entity.setInterpolationDuration(2);
                 entity.setInterpolationDelay(0);
                 Matrix4f mat = new Matrix4f()
-                        .scale(0.42f, 0.42f, 0.42f)
+                        .scale(0.65f, 0.65f, 0.65f)
                         .translate(-0.5f, -0.5f, -0.5f);
                 entity.setTransformationMatrix(mat);
                 entity.setPersistent(false);
                 entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
             });
-            crystals.add(orbitBlock);
+
+            Location orbitCenterLoc = loc.clone().add(0, 1.75, 0);
+            for (int i = 0; i < 3; i++) {
+                BlockDisplay orbitBlock = world.spawn(orbitCenterLoc, BlockDisplay.class, entity -> {
+                    entity.setBlock(crystalBlockMat.createBlockData());
+                    entity.setInterpolationDuration(2);
+                    entity.setInterpolationDelay(0);
+                    Matrix4f mat = new Matrix4f()
+                            .scale(0.42f, 0.42f, 0.42f)
+                            .translate(-0.5f, -0.5f, -0.5f);
+                    entity.setTransformationMatrix(mat);
+                    entity.setPersistent(false);
+                    entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
+                });
+                crystals.add(orbitBlock);
+            }
         }
 
         // =========================================================================
-        // 5. Floating Holographic Title Label (Above the Top Relic at Y: 4.25)
+        // 5. Floating Holographic Title Label (Above the Top Relic at Y: 4.35)
         // =========================================================================
-        Location labelLoc = loc.clone().add(0, 4.25, 0);
+        Location labelLoc = loc.clone().add(0, 4.35, 0);
         TextDisplay label = world.spawn(labelLoc, TextDisplay.class, entity -> {
             String text = "\n&b\u2726 &l" + wp.getName() + "\n&7" + wp.getOwnerName() + "\n";
             entity.setText(ChatColor.translateAlternateColorCodes('&', text));
@@ -232,17 +267,17 @@ public class WaypointRenderer {
         });
 
         // =========================================================================
-        // 6. Interaction Entity (Encompassing the Full 3x3 Base and 3.2m Height)
+        // 6. Interaction Entity (Encompassing the Full 3x3 Base and 3.5m Height)
         // =========================================================================
         Interaction interaction = world.spawn(loc, Interaction.class, entity -> {
             entity.setInteractionWidth(2.6f);
-            entity.setInteractionHeight(3.2f);
+            entity.setInteractionHeight(3.5f);
             entity.setResponsive(true);
             entity.setPersistent(false);
             entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
         });
 
-        spawnedEntities.put(wpId, new WaypointEntities(structureBlocks, crystals, topRelic, insetEye, label, interaction, loc.clone()));
+        spawnedEntities.put(wpId, new WaypointEntities(structureBlocks, crystals, topRelic, insetEye, label, interaction, loc.clone(), isEndCrystal));
         waypointDataCache.put(wpId, wp);
     }
 
@@ -313,7 +348,7 @@ public class WaypointRenderer {
                 for (int i = 0; i < 3; i++) {
                     player.spawnParticle(Particle.SOUL_FIRE_FLAME,
                             bx + (Math.random() - 0.5) * 0.2,
-                            by + 3.8 + Math.random() * 2.5,
+                            by + 4.0 + Math.random() * 2.5,
                             bz + (Math.random() - 0.5) * 0.2,
                             1, 0, 0, 0, 0);
                 }
@@ -338,7 +373,6 @@ public class WaypointRenderer {
                 float bobTime = (float) Math.toRadians(ticks * 4.0);
                 float topAngle = (float) Math.toRadians((config.getCrystalRotationSpeed() * ticks * 0.8) % 360);
                 float topBob = (float) (Math.sin(Math.toRadians(ticks * 3.0)) * 0.08);
-                float orbitRadius = 1.70f;
                 boolean doParticles = config.isAmbientParticles() && (ticks % 6 == 0);
 
                 List<Map.Entry<UUID, WaypointEntities>> snapshot = new ArrayList<>(spawnedEntities.entrySet());
@@ -347,60 +381,99 @@ public class WaypointRenderer {
                     UUID wpId = entry.getKey();
                     Waypoint wp = waypointDataCache.get(wpId);
 
-                    // 1. Animate Top 3D Block Relic (Centered Rotation & Gentle Bob)
-                    if (entities.topRelic != null && entities.topRelic.isValid()) {
-                        reusableQuat.rotationY(topAngle);
-                        reusableMatrix.identity()
-                                .translate(0, topBob, 0)
-                                .rotate(reusableQuat)
-                                .scale(0.65f, 0.65f, 0.65f)
-                                .translate(-0.5f, -0.5f, -0.5f);
-                        entities.topRelic.setTransformationMatrix(reusableMatrix);
-
-                        // Subtle green sparkle ascending into the top relic
+                    if (entities.isEndCrystal) {
+                        // --- 1. End Crystal Mode ---
+                        // Top End Crystal sparkles
                         if (ticks % 4 == 0 && entities.baseLocation != null) {
-                            Location sparkLoc = entities.baseLocation.clone().add(0, 3.25 + topBob, 0);
+                            Location sparkLoc = entities.baseLocation.clone().add(0, 3.25, 0);
                             ParticleUtil.spawn(sparkLoc.getWorld(), Particle.HAPPY_VILLAGER, sparkLoc, 1, 0.1, 0.05, 0.1, 0.01);
                         }
-                    }
 
-                    // 2. Animate the 3 Orbiting 3D Block Crystals (Floating around the 3x3 Waypoint)
-                    if (entities.crystals != null && !entities.crystals.isEmpty()) {
-                        for (int i = 0; i < entities.crystals.size(); i++) {
-                            BlockDisplay crystal = entities.crystals.get(i);
-                            if (crystal == null || !crystal.isValid()) continue;
+                        // Orbiting 3 End Crystals around the 3x3 stone fence perimeter
+                        if (entities.crystals != null && !entities.crystals.isEmpty()) {
+                            float orbitRadius = 2.10f;
+                            for (int i = 0; i < entities.crystals.size(); i++) {
+                                Entity crystal = entities.crystals.get(i);
+                                if (crystal == null || !crystal.isValid()) continue;
 
-                            float phaseOffset = (float) (i * 2.0 * Math.PI / 3.0);
-                            float angle = baseAngle + phaseOffset;
-                            float bobOffset = (float) (Math.sin(bobTime + phaseOffset) * config.getCrystalBobAmplitude());
+                                float phaseOffset = (float) (i * 2.0 * Math.PI / 3.0);
+                                float angle = baseAngle + phaseOffset;
+                                float bobOffset = (float) (Math.sin(bobTime + phaseOffset) * config.getCrystalBobAmplitude());
 
-                            float x = (float) (Math.cos(angle) * orbitRadius);
-                            float z = (float) (Math.sin(angle) * orbitRadius);
+                                double cx = entities.baseLocation.getX() + Math.cos(angle) * orbitRadius;
+                                double cz = entities.baseLocation.getZ() + Math.sin(angle) * orbitRadius;
+                                double cy = entities.baseLocation.getY() + 1.85 + bobOffset;
 
-                            reusableQuat.rotationY((float) (angle * 2.5)).rotateZ(0.20f);
-                            reusableMatrix.identity()
-                                    .translate(x, bobOffset, z)
-                                    .rotate(reusableQuat)
-                                    .scale(0.42f, 0.42f, 0.42f)
-                                    .translate(-0.5f, -0.5f, -0.5f);
-                            crystal.setTransformationMatrix(reusableMatrix);
+                                crystal.teleport(new Location(entities.baseLocation.getWorld(), cx, cy, cz));
 
-                            // Ambient particles from each orbiting crystal
-                            if (doParticles && wp != null && entities.baseLocation != null) {
-                                Location cLoc = entities.baseLocation.clone().add(x, 1.75 + bobOffset, z);
-                                Particle p;
-                                try {
-                                    p = Particle.valueOf(wp.getParticleType());
-                                } catch (Exception e) {
-                                    p = config.getAmbientParticle();
+                                if (doParticles && wp != null) {
+                                    Particle p = Particle.PORTAL;
+                                    try {
+                                        p = Particle.valueOf(wp.getParticleType());
+                                    } catch (Exception ignored) {}
+                                    ParticleUtil.spawn(entities.baseLocation.getWorld(), p, cx, cy + 0.5, cz, 1, 0.05, 0.05, 0.05, 0.01);
                                 }
-                                ParticleUtil.spawn(cLoc.getWorld(), p, cLoc, 1, 0.02, 0.02, 0.02, 0.01);
-                            }
 
-                            // Decaying visual: smoke if decaying
-                            if (wp != null && wp.isDecaying() && entities.baseLocation != null) {
-                                Location cLoc = entities.baseLocation.clone().add(x, 1.75 + bobOffset, z);
-                                cLoc.getWorld().spawnParticle(Particle.SMOKE, cLoc, 1, 0.05, 0.05, 0.05, 0.01);
+                                if (wp != null && wp.isDecaying()) {
+                                    entities.baseLocation.getWorld().spawnParticle(Particle.SMOKE, cx, cy + 0.5, cz, 1, 0.05, 0.05, 0.05, 0.01);
+                                }
+                            }
+                        }
+                    } else {
+                        // --- 2. 3D BlockDisplay Mode ---
+                        if (entities.topRelic instanceof BlockDisplay && entities.topRelic.isValid()) {
+                            BlockDisplay topBD = (BlockDisplay) entities.topRelic;
+                            reusableQuat.rotationY(topAngle);
+                            reusableMatrix.identity()
+                                    .translate(0, topBob, 0)
+                                    .rotate(reusableQuat)
+                                    .scale(0.65f, 0.65f, 0.65f)
+                                    .translate(-0.5f, -0.5f, -0.5f);
+                            topBD.setTransformationMatrix(reusableMatrix);
+
+                            if (ticks % 4 == 0 && entities.baseLocation != null) {
+                                Location sparkLoc = entities.baseLocation.clone().add(0, 3.25 + topBob, 0);
+                                ParticleUtil.spawn(sparkLoc.getWorld(), Particle.HAPPY_VILLAGER, sparkLoc, 1, 0.1, 0.05, 0.1, 0.01);
+                            }
+                        }
+
+                        if (entities.crystals != null && !entities.crystals.isEmpty()) {
+                            float orbitRadius = 1.70f;
+                            for (int i = 0; i < entities.crystals.size(); i++) {
+                                Entity e = entities.crystals.get(i);
+                                if (!(e instanceof BlockDisplay) || !e.isValid()) continue;
+                                BlockDisplay crystal = (BlockDisplay) e;
+
+                                float phaseOffset = (float) (i * 2.0 * Math.PI / 3.0);
+                                float angle = baseAngle + phaseOffset;
+                                float bobOffset = (float) (Math.sin(bobTime + phaseOffset) * config.getCrystalBobAmplitude());
+
+                                float x = (float) (Math.cos(angle) * orbitRadius);
+                                float z = (float) (Math.sin(angle) * orbitRadius);
+
+                                reusableQuat.rotationY((float) (angle * 2.5)).rotateZ(0.20f);
+                                reusableMatrix.identity()
+                                        .translate(x, bobOffset, z)
+                                        .rotate(reusableQuat)
+                                        .scale(0.42f, 0.42f, 0.42f)
+                                        .translate(-0.5f, -0.5f, -0.5f);
+                                crystal.setTransformationMatrix(reusableMatrix);
+
+                                if (doParticles && wp != null && entities.baseLocation != null) {
+                                    Location cLoc = entities.baseLocation.clone().add(x, 1.75 + bobOffset, z);
+                                    Particle p;
+                                    try {
+                                        p = Particle.valueOf(wp.getParticleType());
+                                    } catch (Exception ex) {
+                                        p = config.getAmbientParticle();
+                                    }
+                                    ParticleUtil.spawn(cLoc.getWorld(), p, cLoc, 1, 0.02, 0.02, 0.02, 0.01);
+                                }
+
+                                if (wp != null && wp.isDecaying() && entities.baseLocation != null) {
+                                    Location cLoc = entities.baseLocation.clone().add(x, 1.75 + bobOffset, z);
+                                    cLoc.getWorld().spawnParticle(Particle.SMOKE, cLoc, 1, 0.05, 0.05, 0.05, 0.01);
+                                }
                             }
                         }
                     }
@@ -438,21 +511,23 @@ public class WaypointRenderer {
     }
 
     public boolean isWaypointInteraction(Entity entity) {
-        return entity instanceof Interaction && entity.getPersistentDataContainer().has(wpIdKey, PersistentDataType.STRING);
+        return (entity instanceof Interaction || entity instanceof EnderCrystal) &&
+                entity.getPersistentDataContainer().has(wpIdKey, PersistentDataType.STRING);
     }
 
     private static class WaypointEntities {
         final List<BlockDisplay> structureBlocks;
-        final List<BlockDisplay> crystals;
-        final BlockDisplay topRelic;
+        final List<Entity> crystals;
+        final Entity topRelic;
         final ItemDisplay insetEye;
         final TextDisplay label;
         final Interaction interaction;
         final Location baseLocation;
+        final boolean isEndCrystal;
 
-        WaypointEntities(List<BlockDisplay> structureBlocks, List<BlockDisplay> crystals,
-                         BlockDisplay topRelic, ItemDisplay insetEye, TextDisplay label,
-                         Interaction interaction, Location baseLocation) {
+        WaypointEntities(List<BlockDisplay> structureBlocks, List<Entity> crystals,
+                         Entity topRelic, ItemDisplay insetEye, TextDisplay label,
+                         Interaction interaction, Location baseLocation, boolean isEndCrystal) {
             this.structureBlocks = structureBlocks;
             this.crystals = crystals;
             this.topRelic = topRelic;
@@ -460,6 +535,7 @@ public class WaypointRenderer {
             this.label = label;
             this.interaction = interaction;
             this.baseLocation = baseLocation;
+            this.isEndCrystal = isEndCrystal;
         }
 
         void removeAll() {
@@ -469,8 +545,8 @@ public class WaypointRenderer {
                 }
             }
             if (crystals != null) {
-                for (BlockDisplay bd : crystals) {
-                    if (bd != null && bd.isValid()) bd.remove();
+                for (Entity e : crystals) {
+                    if (e != null && e.isValid()) e.remove();
                 }
             }
             if (topRelic != null && topRelic.isValid()) topRelic.remove();

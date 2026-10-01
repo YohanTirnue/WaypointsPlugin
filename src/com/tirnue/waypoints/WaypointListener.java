@@ -123,6 +123,29 @@ public class WaypointListener implements Listener {
         }
     }
 
+    @EventHandler
+    public void onPlayerInteractEntity(org.bukkit.event.player.PlayerInteractEntityEvent event) {
+        if (event instanceof PlayerInteractAtEntityEvent) return;
+        if (event.getHand() != EquipmentSlot.HAND) return;
+        Entity entity = event.getRightClicked();
+        if (plugin.getWaypointRenderer().isWaypointInteraction(entity)) {
+            UUID wpId = plugin.getWaypointRenderer().getWaypointIdFromInteraction(entity);
+            if (wpId != null) {
+                Waypoint wp = plugin.getWaypointManager().getWaypoint(wpId);
+                if (wp != null) {
+                    Player player = event.getPlayer();
+                    if (wp.isOwner(player.getUniqueId())) {
+                        plugin.getWaypointGUI().openManagementMenu(player, wp);
+                    } else if (wp.isTrusted(player.getUniqueId()) || wp.isGlobal()) {
+                        plugin.getWaypointGUI().openTravelMenu(player, wp);
+                    } else {
+                        player.sendMessage(plugin.getConfigManager().getPrefix() + plugin.getConfigManager().getMessage("no-permission"));
+                    }
+                }
+            }
+        }
+    }
+
     // HIGH fix: Check if player is teleporting FIRST before doing any math
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -141,6 +164,12 @@ public class WaypointListener implements Listener {
 
     @EventHandler
     public void onEntityDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof org.bukkit.entity.EnderCrystal) {
+            if (plugin.getWaypointRenderer().isWaypointInteraction(event.getEntity())) {
+                event.setCancelled(true);
+            }
+            return;
+        }
         if (!(event.getEntity() instanceof Player player)) return;
         if (plugin.getTeleportManager().isCurrentlyTeleporting(player.getUniqueId())) {
             plugin.getTeleportManager().cancelTeleport(player.getUniqueId(),

@@ -363,20 +363,25 @@ public class WaypointGUI {
         }
 
         Material[] crystals = {
-            Material.AMETHYST_CLUSTER, Material.CONDUIT, Material.RESPAWN_ANCHOR,
-            Material.BEACON, Material.SEA_LANTERN, Material.EMERALD_BLOCK,
-            Material.DIAMOND_BLOCK, Material.GLOWSTONE, Material.LODESTONE
+            Material.END_CRYSTAL, Material.AMETHYST_CLUSTER, Material.CONDUIT,
+            Material.RESPAWN_ANCHOR, Material.BEACON, Material.SEA_LANTERN,
+            Material.EMERALD_BLOCK, Material.DIAMOND_BLOCK, Material.GLOWSTONE
         };
         String[] crystalNames = {
-            "&d✦ Amethyst Crystal", "&b✦ Conduit Core", "&5✦ Respawn Anchor",
-            "&f✦ Crystal Beacon", "&3✦ Sea Lantern", "&a✦ Emerald Relic",
-            "&b✦ Diamond Relic", "&e✦ Glowstone Crystal", "&7✦ Lodestone Anchor"
+            "&d✦ Ender Crystal", "&d✦ Amethyst Crystal", "&b✦ Conduit Core",
+            "&5✦ Respawn Anchor", "&f✦ Crystal Beacon", "&3✦ Sea Lantern",
+            "&a✦ Emerald Relic", "&b✦ Diamond Relic", "&e✦ Glowstone Crystal"
         };
         for(int i = 0; i < 9; i++) {
-            ItemStack item = createItem(crystals[i], crystalNames[i], "&7Click to select 3D block crystal");
+            ItemStack item = createItem(crystals[i], crystalNames[i], "&7Click to select crystal");
             String wpMat = wp.getCrystalMaterial();
-            if (crystals[i].name().equalsIgnoreCase(wpMat) ||
-                (wpMat != null && (crystals[i].name().startsWith(wpMat) || wpMat.startsWith(crystals[i].name())))) {
+            boolean isSelected = false;
+            if (crystals[i] == Material.END_CRYSTAL) {
+                isSelected = (wpMat == null || wpMat.equalsIgnoreCase("END_CRYSTAL") || wpMat.equalsIgnoreCase("AMETHYST_SHARD") || wpMat.equalsIgnoreCase("DEFAULT"));
+            } else if (crystals[i].name().equalsIgnoreCase(wpMat)) {
+                isSelected = true;
+            }
+            if (isSelected) {
                 item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.UNBREAKING, 1);
                 ItemMeta meta = item.getItemMeta();
                 meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
@@ -710,9 +715,9 @@ public class WaypointGUI {
                     openCustomizeMenu(player, wp);
                 } else if (slot >= 9 && slot < 18) {
                     Material[] crystals = {
-                        Material.AMETHYST_CLUSTER, Material.CONDUIT, Material.RESPAWN_ANCHOR,
-                        Material.BEACON, Material.SEA_LANTERN, Material.EMERALD_BLOCK,
-                        Material.DIAMOND_BLOCK, Material.GLOWSTONE, Material.LODESTONE
+                        Material.END_CRYSTAL, Material.AMETHYST_CLUSTER, Material.CONDUIT,
+                        Material.RESPAWN_ANCHOR, Material.BEACON, Material.SEA_LANTERN,
+                        Material.EMERALD_BLOCK, Material.DIAMOND_BLOCK, Material.GLOWSTONE
                     };
                     wp.setCrystalMaterial(crystals[slot - 9].name());
                     plugin.getWaypointManager().saveAsync();

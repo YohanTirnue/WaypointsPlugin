@@ -27,7 +27,7 @@ public class Waypoint {
     private Set<UUID> linkedWaypointIds;
     private long createdAt;
     private String particleType = "ENCHANT";
-    private String crystalMaterial = "AMETHYST_SHARD";
+    private String crystalMaterial = "END_CRYSTAL";
     private String tier = "BASIC";
     private double usageFee = 0.0;
     private final List<ActivityEntry> activityLog = new ArrayList<>();

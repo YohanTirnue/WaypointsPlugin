@@ -286,7 +286,7 @@ public class WaypointManager {
                 float pitch = (float) yaml.getDouble(key + ".pitch", 0.0);
                 boolean isGlobal = yaml.getBoolean(key + ".isGlobal", false);
                 String particleType = yaml.getString(key + ".particleType", "ENCHANT");
-                String crystalMaterial = yaml.getString(key + ".crystalMaterial", "AMETHYST_SHARD");
+                String crystalMaterial = yaml.getString(key + ".crystalMaterial", "END_CRYSTAL");
                 String tier = yaml.getString(key + ".tier", "BASIC");
                 double usageFee = yaml.getDouble(key + ".usageFee", 0.0);
                 boolean decaying = yaml.getBoolean(key + ".decaying", false);
