@@ -218,7 +218,7 @@ public class WaypointRenderer {
                         } catch (Exception e) {
                             p = config.getAmbientParticle();
                         }
-                        loc.getWorld().spawnParticle(p, loc, 2, 0.2, 0.2, 0.2, 0.01);
+                        ParticleUtil.spawn(loc.getWorld(), p, loc, 2, 0.2, 0.2, 0.2, 0.01);
                     }
                     
                     // Decaying visual: red particles if decaying

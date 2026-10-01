@@ -241,14 +241,14 @@ public class LinkManager {
         if (msg != null && !msg.isEmpty()) redeemer.sendMessage(configManager.getPrefix() + msg);
         
         // Departure FX
-        redeemer.getWorld().spawnParticle(org.bukkit.Particle.PORTAL, redeemer.getLocation().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
+        ParticleUtil.spawn(redeemer.getWorld(), org.bukkit.Particle.PORTAL, redeemer.getLocation().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
         redeemer.getWorld().playSound(redeemer.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
 
         org.bukkit.Location dest = source.toBukkitLocation();
         if (dest != null) {
             redeemer.teleport(dest);
             // Arrival FX
-            redeemer.getWorld().spawnParticle(org.bukkit.Particle.PORTAL, dest.clone().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
+            ParticleUtil.spawn(dest.getWorld(), org.bukkit.Particle.PORTAL, dest.clone().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
             redeemer.getWorld().playSound(dest, org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
         }
 

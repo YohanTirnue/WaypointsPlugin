@@ -6,6 +6,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -137,7 +138,7 @@ public class TeleportManager {
                         double px = pLoc.getX() + Math.cos(angle) * radius;
                         double pz = pLoc.getZ() + Math.sin(angle) * radius;
                         double py = pLoc.getY() + 0.1 + progress * 2.0;
-                        pLoc.getWorld().spawnParticle(config.getChannelingParticle(), px, py, pz, 1, 0, 0, 0, 0);
+                        ParticleUtil.spawn(pLoc.getWorld(), config.getChannelingParticle(), px, py, pz, 1, 0, 0, 0, 0);
                     }
                 }
 
@@ -150,7 +151,7 @@ public class TeleportManager {
                 if (teleport.ticksElapsed % 4 == 0 || teleport.ticksElapsed >= teleport.totalTicks) {
                     int bars = (int)(progress * 10);
                     double timeRemaining = (teleport.totalTicks - teleport.ticksElapsed) / 20.0;
-                    String msg = "\u00a7bWarping: \u00a7f[\u00a7a" + "\u25a0".repeat(bars) + "\u00a77" + "\u25a1".repeat(10 - bars) + "\u00a7f] \u00a7e" + String.format("%.1fs", timeRemaining);
+                    String msg = "\u00a7bWarping: \u00a7f[\u00a7a" + "\u25a0".repeat(bars) + "\u00a77" + "\u25a1".repeat(10 - bars) + "\u00a7f] \u00a7e" + String.format("%.1fs", Math.max(0.0, timeRemaining));
                     player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(msg));
                 }
 
@@ -167,6 +168,13 @@ public class TeleportManager {
     private void completeTeleport(UUID pid, ActiveTeleport teleport) {
         activeTeleports.remove(pid);
         Player player = teleport.player;
+
+        Location dest = teleport.to.toBukkitLocation();
+        if (dest == null || dest.getWorld() == null) {
+            player.sendMessage(config.getPrefix() + ChatColor.RED + "Destination waypoint world is not available!");
+            player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(""));
+            return;
+        }
 
         // Deduct cost
         if (config.isCostEnabled() && !(teleport.to.isGlobal() && config.isGlobalWaypointsFree())) {
@@ -197,57 +205,63 @@ public class TeleportManager {
             }
         }
 
-        // Dissolve animation: spiral particles converge inward over 1 second (20 ticks)
-        new BukkitRunnable() {
-            int animTick = 0;
-            @Override
-            public void run() {
-                animTick++;
-                // Safety: cancel if player disconnected or tick exceeded
-                if (!player.isOnline() || animTick > 20) {
-                    this.cancel();
-                    return;
+        // 1. Departure sound & particles at origin
+        Location originLoc = player.getLocation().clone();
+        World originWorld = originLoc.getWorld();
+        if (originWorld != null) {
+            try {
+                originWorld.playSound(originLoc, config.getDepartureSound(), 1.0f, 1.0f);
+                for (int i = 0; i < 20; i++) {
+                    double angle = 2 * Math.PI * i / 20;
+                    double x = Math.cos(angle) * 0.8;
+                    double z = Math.sin(angle) * 0.8;
+                    ParticleUtil.spawn(originWorld, config.getDepartureParticle(), originLoc.getX() + x, originLoc.getY() + 1.0, originLoc.getZ() + z, 2, 0.05, 0.2, 0.05, 0.05);
                 }
-                // Departure dissolve: particles spiral inward
-                double radius = 2.0 * (1.0 - animTick / 20.0);
-                Location pLoc = player.getLocation().add(0, 1, 0);
-                for (int i = 0; i < 8; i++) {
-                    double angle = 2 * Math.PI * i / 8 + (animTick * 0.5);
-                    double x = Math.cos(angle) * radius;
-                    double z = Math.sin(angle) * radius;
-                    pLoc.getWorld().spawnParticle(config.getDepartureParticle(), pLoc.getX() + x, pLoc.getY() + animTick * 0.1, pLoc.getZ() + z, 1, 0, 0, 0, 0);
-                }
-                // Final frame: teleport the player
-                if (animTick == 20) {
-                    player.getWorld().playSound(player.getLocation(), config.getDepartureSound(), 1.0f, 1.0f);
-                    Location dest = teleport.to.toBukkitLocation();
-                    if (dest != null) {
-                        player.teleport(dest);
-                        // Log activity on both waypoints
-                        teleport.from.addActivity(player.getName(), player.getUniqueId(), "WARP_FROM", teleport.to.getName());
-                        teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
-                        // Arrival burst: particles expand outward
-                        new BukkitRunnable() {
-                            int arrivalTick = 0;
-                            @Override
-                            public void run() {
-                                arrivalTick++;
-                                double r = arrivalTick * 0.15;
-                                for (int i = 0; i < 10; i++) {
-                                    double a = 2 * Math.PI * i / 10;
-                                    dest.getWorld().spawnParticle(config.getArrivalParticle(), dest.getX() + Math.cos(a) * r, dest.getY() + 1, dest.getZ() + Math.sin(a) * r, 1, 0, 0, 0, 0);
-                                }
-                                if (arrivalTick >= 10) {
-                                    dest.getWorld().playSound(dest, config.getArrivalSound(), 1.0f, 1.0f);
-                                    this.cancel();
-                                }
-                            }
-                        }.runTaskTimer(plugin, 0L, 1L);
-                    }
-                    this.cancel();
-                }
+            } catch (Throwable t) {
+                plugin.getLogger().warning("Error playing departure FX: " + t.getMessage());
             }
-        }.runTaskTimer(plugin, 0L, 1L);
+        }
+
+        // 2. Perform the teleport immediately upon countdown completion!
+        player.teleport(dest);
+
+        // 3. Clear action bar and send success message
+        player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(""));
+        String successMsg = config.getMessage("teleport-success");
+        if (successMsg != null && !successMsg.isEmpty()) {
+            player.sendMessage(config.getPrefix() + successMsg.replace("{destination}", teleport.to.getName()));
+        }
+
+        // 4. Log activity on both waypoints
+        teleport.from.addActivity(player.getName(), player.getUniqueId(), "WARP_FROM", teleport.to.getName());
+        teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
+
+        // 5. Arrival sound & expanding particles at destination
+        World destWorld = dest.getWorld();
+        if (destWorld != null) {
+            try {
+                destWorld.playSound(dest, config.getArrivalSound(), 1.0f, 1.0f);
+            } catch (Throwable ignored) {}
+
+            new BukkitRunnable() {
+                int arrivalTick = 0;
+                @Override
+                public void run() {
+                    arrivalTick++;
+                    if (arrivalTick > 10 || !player.isOnline()) {
+                        this.cancel();
+                        return;
+                    }
+                    double r = arrivalTick * 0.15;
+                    for (int i = 0; i < 10; i++) {
+                        double a = 2 * Math.PI * i / 10;
+                        ParticleUtil.spawn(destWorld, config.getArrivalParticle(), 
+                            dest.getX() + Math.cos(a) * r, dest.getY() + 0.2, dest.getZ() + Math.sin(a) * r, 
+                            1, 0, 0, 0, 0);
+                    }
+                }
+            }.runTaskTimer(plugin, 0L, 1L);
+        }
 
         // Set cooldown
         int cdSeconds = config.getCooldownSeconds();
@@ -262,6 +276,7 @@ public class TeleportManager {
         if (teleport != null && teleport.task != null) {
             teleport.task.cancel();
             if (!reason.equals("offline") && teleport.player.isOnline()) {
+                teleport.player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(""));
                 teleport.player.sendMessage(reason);
                 teleport.player.playSound(teleport.player.getLocation(), Sound.BLOCK_FIRE_EXTINGUISH, 1.0f, 1.0f);
             }
