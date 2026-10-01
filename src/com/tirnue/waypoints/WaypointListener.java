@@ -11,9 +11,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -161,6 +162,11 @@ public class WaypointListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         plugin.getWaypointGUI().handleClick(event);
+    }
+
+    @EventHandler
+    public void onInventoryDrag(InventoryDragEvent event) {
+        plugin.getWaypointGUI().handleDrag(event);
     }
 
     @EventHandler
