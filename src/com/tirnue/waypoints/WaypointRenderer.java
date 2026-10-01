@@ -37,10 +37,6 @@ public class WaypointRenderer {
     private BukkitTask animationTask;
     private final Quaternionf reusableQuat = new Quaternionf();
 
-    // Runic inscriptions matching the reference image's ancient monolith style
-    private static final String RUNIC_TEXT = ChatColor.translateAlternateColorCodes('&',
-            "&b&lᔑ &f&lʖ\n&f&lᓵ &b&l↸\n&b&l⎓ &f&l⊣\n&f&lꖎ &b&lᒲ\n&b&lᔑ &f&lᚢ");
-
     public WaypointRenderer(TirnueWaypoints plugin, ConfigManager config) {
         this.plugin = plugin;
         this.config = config;
@@ -57,52 +53,124 @@ public class WaypointRenderer {
 
         World world = loc.getWorld();
         UUID wpId = wp.getId();
-        List<BlockDisplay> structureBlocks = new ArrayList<>(8);
-        List<TextDisplay> runeDisplays = new ArrayList<>(4);
+        List<BlockDisplay> structureBlocks = new ArrayList<>();
         List<ItemDisplay> crystals = new ArrayList<>(3);
 
-        // --- 1. Architectural 3-Block Tall Monolith Base (Ref: waystonereference.png) ---
-        // Tier 1: Wide Plinth Base (Y: 0.00 -> 0.25)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.STONE_BRICKS, 1.05f, 0.25f, 1.05f, 0.00f, wpId));
-        // Tier 2: Stepped Plinth Tier (Y: 0.25 -> 0.50)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.CHISELED_STONE_BRICKS, 0.86f, 0.25f, 0.86f, 0.25f, wpId));
-        // Tier 3: Plinth Collar (Y: 0.50 -> 0.65)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.SMOOTH_STONE, 0.72f, 0.15f, 0.72f, 0.50f, wpId));
-        // Tier 4: Monolith Column Shaft (Y: 0.65 -> 2.25, Height 1.60)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.SMOOTH_STONE, 0.62f, 1.60f, 0.62f, 0.65f, wpId));
-        // Tier 5: Cornice Overhang / Capital (Y: 2.25 -> 2.45)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.STONE_BRICKS, 0.88f, 0.20f, 0.88f, 2.25f, wpId));
-        // Tier 6: Stepped Roof Lower (Y: 2.45 -> 2.70)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.SMOOTH_STONE, 0.68f, 0.25f, 0.68f, 2.45f, wpId));
-        // Tier 7: Roof Pyramid Peak (Y: 2.70 -> 2.98)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.POLISHED_ANDESITE, 0.46f, 0.28f, 0.46f, 2.70f, wpId));
-        // Tier 8: Pinnacle Crown Tip (Y: 2.98 -> 3.06)
-        structureBlocks.add(spawnBlockTier(world, loc, Material.STONE_BRICKS, 0.22f, 0.08f, 0.22f, 2.98f, wpId));
+        // =========================================================================
+        // 1. 3x3 Wide Stone Foundation Platform (Ref: waystonereference.png)
+        // =========================================================================
+        // Platform floor: 2.6m x 2.6m x 0.20m
+        structureBlocks.add(spawnBlockTier(world, loc, Material.POLISHED_DEEPSLATE,
+                2.60f, 0.20f, 2.60f, 0.0f, 0.00f, 0.0f, wpId));
 
-        // --- 2. Carved Glowing Runes on the 4 Faces of the Column Shaft ---
-        double shaftCenterY = loc.getY() + 1.45;
-        double faceOffset = 0.315; // Shaft half-width is 0.310
-        // South Face (yaw = 0)
-        runeDisplays.add(spawnRuneFace(world, new Location(world, loc.getX(), shaftCenterY, loc.getZ() + faceOffset, 0f, 0f), wpId));
-        // North Face (yaw = 180)
-        runeDisplays.add(spawnRuneFace(world, new Location(world, loc.getX(), shaftCenterY, loc.getZ() - faceOffset, 180f, 0f), wpId));
-        // East Face (yaw = 270)
-        runeDisplays.add(spawnRuneFace(world, new Location(world, loc.getX() + faceOffset, shaftCenterY, loc.getZ(), 270f, 0f), wpId));
-        // West Face (yaw = 90)
-        runeDisplays.add(spawnRuneFace(world, new Location(world, loc.getX() - faceOffset, shaftCenterY, loc.getZ(), 90f, 0f), wpId));
+        // 4 Corner Stone Fence / Wall Buttresses (providing the 3x3 wideness!)
+        float cornerDist = 1.05f;
+        float[][] corners = {
+                {-cornerDist, -cornerDist},
+                { cornerDist, -cornerDist},
+                {-cornerDist,  cornerDist},
+                { cornerDist,  cornerDist}
+        };
 
-        // --- 3. Three Floating Items Orbiting the Waypoint ---
+        for (float[] c : corners) {
+            // Stone wall corner post
+            structureBlocks.add(spawnBlockTier(world, loc, Material.DEEPSLATE_BRICK_WALL,
+                    0.52f, 0.70f, 0.52f, c[0], 0.20f, c[1], wpId));
+            // Corner brazier / lantern post (teal oxidized copper)
+            structureBlocks.add(spawnBlockTier(world, loc, Material.OXIDIZED_COPPER,
+                    0.38f, 0.25f, 0.38f, c[0], 0.90f, c[1], wpId));
+        }
+
+        // Perimeter Low Stone Wall Railings connecting the corners
+        structureBlocks.add(spawnBlockTier(world, loc, Material.COBBLED_DEEPSLATE_WALL,
+                1.20f, 0.35f, 0.35f, 0.0f, 0.20f, -cornerDist, wpId)); // North
+        structureBlocks.add(spawnBlockTier(world, loc, Material.COBBLED_DEEPSLATE_WALL,
+                1.20f, 0.35f, 0.35f, 0.0f, 0.20f,  cornerDist, wpId)); // South
+        structureBlocks.add(spawnBlockTier(world, loc, Material.COBBLED_DEEPSLATE_WALL,
+                0.35f, 0.35f, 1.20f, -cornerDist, 0.20f, 0.0f, wpId)); // West
+        structureBlocks.add(spawnBlockTier(world, loc, Material.COBBLED_DEEPSLATE_WALL,
+                0.35f, 0.35f, 1.20f,  cornerDist, 0.20f, 0.0f, wpId)); // East
+
+        // =========================================================================
+        // 2. Central 3-Block Tall Shrine Tower
+        // =========================================================================
+        // Tower Base Plinth (Y: 0.20 -> 0.90, height: 0.70m)
+        structureBlocks.add(spawnBlockTier(world, loc, Material.CHISELED_DEEPSLATE,
+                1.15f, 0.70f, 1.15f, 0.0f, 0.20f, 0.0f, wpId));
+
+        // Inset Eye emblem on the front base
+        Location eyeLoc = loc.clone().add(0, 0.55, 0.585);
+        ItemDisplay insetEye = world.spawn(eyeLoc, ItemDisplay.class, entity -> {
+            entity.setItemStack(new ItemStack(Material.ENDER_EYE));
+            Transformation t = entity.getTransformation();
+            t.getScale().set(0.28f, 0.28f, 0.28f);
+            entity.setTransformation(t);
+            entity.setPersistent(false);
+            entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
+        });
+
+        // Glowing Green Stained Glass Core Chamber (Y: 0.90 -> 2.25, height: 1.35m)
+        // Inner glowing light
+        structureBlocks.add(spawnBlockTier(world, loc, Material.SEA_LANTERN,
+                0.45f, 1.10f, 0.45f, 0.0f, 0.95f, 0.0f, wpId));
+        // Outer translucent green glass chamber
+        structureBlocks.add(spawnBlockTier(world, loc, Material.LIME_STAINED_GLASS,
+                0.72f, 1.35f, 0.72f, 0.0f, 0.90f, 0.0f, wpId));
+
+        // 4 Corner Wall Columns Framing the Glass Chamber (Y: 0.90 -> 2.25)
+        float colOffset = 0.38f;
+        float[][] colCorners = {
+                {-colOffset, -colOffset},
+                { colOffset, -colOffset},
+                {-colOffset,  colOffset},
+                { colOffset,  colOffset}
+        };
+        for (float[] cc : colCorners) {
+            structureBlocks.add(spawnBlockTier(world, loc, Material.DEEPSLATE_BRICK_WALL,
+                    0.36f, 1.35f, 0.36f, cc[0], 0.90f, cc[1], wpId));
+        }
+
+        // Tower Capital / Overhanging Cornice (Y: 2.25 -> 2.60, height: 0.35m)
+        structureBlocks.add(spawnBlockTier(world, loc, Material.DEEPSLATE_BRICKS,
+                1.35f, 0.35f, 1.35f, 0.0f, 2.25f, 0.0f, wpId));
+
+        // Top Pedestal Ring (Y: 2.60 -> 2.85, height: 0.25m)
+        structureBlocks.add(spawnBlockTier(world, loc, Material.POLISHED_DEEPSLATE,
+                0.95f, 0.25f, 0.95f, 0.0f, 2.60f, 0.0f, wpId));
+
+        // Upper Pedestal Cap Step (Y: 2.85 -> 3.05, height: 0.20m, reaching ~3 blocks tall!)
+        structureBlocks.add(spawnBlockTier(world, loc, Material.DEEPSLATE_TILES,
+                0.65f, 0.20f, 0.65f, 0.0f, 2.85f, 0.0f, wpId));
+
+        // =========================================================================
+        // 3. Top Floating Relic Sphere (Large Eye of Ender at Y: 3.40)
+        // =========================================================================
+        Location topRelicLoc = loc.clone().add(0, 3.40, 0);
         Material parsedMat;
         try {
             parsedMat = Material.valueOf(wp.getCrystalMaterial());
         } catch (IllegalArgumentException e) {
-            parsedMat = config.getCoreItemVisual();
+            parsedMat = Material.ENDER_EYE;
         }
         final Material crystalMat = parsedMat;
-        Location crystalBaseLoc = loc.clone().add(0, 1.65, 0);
 
+        ItemDisplay topRelic = world.spawn(topRelicLoc, ItemDisplay.class, entity -> {
+            entity.setItemStack(new ItemStack(crystalMat));
+            entity.setInterpolationDuration(2);
+            entity.setInterpolationDelay(0);
+            Transformation t = entity.getTransformation();
+            t.getScale().set(0.85f, 0.85f, 0.85f);
+            entity.setTransformation(t);
+            entity.setPersistent(false);
+            entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
+        });
+
+        // =========================================================================
+        // 4. Three Floating Orbiting Items (Floating around the 3x3 Waypoint)
+        // =========================================================================
+        Location orbitCenterLoc = loc.clone().add(0, 1.75, 0);
         for (int i = 0; i < 3; i++) {
-            ItemDisplay crystal = world.spawn(crystalBaseLoc, ItemDisplay.class, entity -> {
+            ItemDisplay orbitItem = world.spawn(orbitCenterLoc, ItemDisplay.class, entity -> {
                 entity.setItemStack(new ItemStack(crystalMat));
                 entity.setInterpolationDuration(2);
                 entity.setInterpolationDelay(0);
@@ -112,11 +180,13 @@ public class WaypointRenderer {
                 entity.setPersistent(false);
                 entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
             });
-            crystals.add(crystal);
+            crystals.add(orbitItem);
         }
 
-        // --- 4. Floating Holographic Title Label (Above the 3-Block Monolith) ---
-        Location labelLoc = loc.clone().add(0, 3.45, 0);
+        // =========================================================================
+        // 5. Floating Holographic Title Label (Above the Top Relic at Y: 4.25)
+        // =========================================================================
+        Location labelLoc = loc.clone().add(0, 4.25, 0);
         TextDisplay label = world.spawn(labelLoc, TextDisplay.class, entity -> {
             String text = "\n&b\u2726 &l" + wp.getName() + "\n&7" + wp.getOwnerName() + "\n";
             entity.setText(ChatColor.translateAlternateColorCodes('&', text));
@@ -126,41 +196,29 @@ public class WaypointRenderer {
             entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
         });
 
-        // --- 5. Interaction Entity (Encompassing the Full 3-Block Monolith) ---
+        // =========================================================================
+        // 6. Interaction Entity (Encompassing the Full 3x3 Base and 3.2m Height)
+        // =========================================================================
         Interaction interaction = world.spawn(loc, Interaction.class, entity -> {
-            entity.setInteractionWidth(1.4f);
-            entity.setInteractionHeight(3.1f);
+            entity.setInteractionWidth(2.6f);
+            entity.setInteractionHeight(3.2f);
             entity.setResponsive(true);
             entity.setPersistent(false);
             entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
         });
 
-        spawnedEntities.put(wpId, new WaypointEntities(structureBlocks, runeDisplays, crystals, label, interaction, loc.clone()));
+        spawnedEntities.put(wpId, new WaypointEntities(structureBlocks, crystals, topRelic, insetEye, label, interaction, loc.clone()));
         waypointDataCache.put(wpId, wp);
     }
 
     private BlockDisplay spawnBlockTier(World world, Location baseLoc, Material material,
-                                        float width, float height, float length, float yOffset, UUID wpId) {
+                                        float width, float height, float length,
+                                        float xOffset, float yOffset, float zOffset, UUID wpId) {
         return world.spawn(baseLoc, BlockDisplay.class, entity -> {
             entity.setBlock(material.createBlockData());
             Transformation t = entity.getTransformation();
             t.getScale().set(width, height, length);
-            t.getTranslation().set(-width / 2.0f, yOffset, -length / 2.0f);
-            entity.setTransformation(t);
-            entity.setPersistent(false);
-            entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
-        });
-    }
-
-    private TextDisplay spawnRuneFace(World world, Location loc, UUID wpId) {
-        return world.spawn(loc, TextDisplay.class, entity -> {
-            entity.setText(RUNIC_TEXT);
-            entity.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
-            entity.setBillboard(TextDisplay.Billboard.FIXED);
-            entity.setBrightness(new Display.Brightness(15, 15));
-            entity.setShadowed(true);
-            Transformation t = entity.getTransformation();
-            t.getScale().set(0.32f, 0.32f, 0.32f);
+            t.getTranslation().set(xOffset - width / 2.0f, yOffset, zOffset - length / 2.0f);
             entity.setTransformation(t);
             entity.setPersistent(false);
             entity.getPersistentDataContainer().set(wpIdKey, PersistentDataType.STRING, wpId.toString());
@@ -215,12 +273,12 @@ public class WaypointRenderer {
 
                 if (player.getLocation().distanceSquared(baseLoc) > 2500) continue;
 
-                // Beacon beam particles shooting from top of 3-block structure into sky
+                // Beacon beam particles shooting from top of structure into sky
                 double bx = baseLoc.getX(), by = baseLoc.getY(), bz = baseLoc.getZ();
                 for (int i = 0; i < 3; i++) {
                     player.spawnParticle(Particle.SOUL_FIRE_FLAME,
                             bx + (Math.random() - 0.5) * 0.2,
-                            by + 3.2 + Math.random() * 2.5,
+                            by + 3.8 + Math.random() * 2.5,
                             bz + (Math.random() - 0.5) * 0.2,
                             1, 0, 0, 0, 0);
                 }
@@ -243,7 +301,9 @@ public class WaypointRenderer {
 
                 float baseAngle = (float) Math.toRadians((config.getCrystalRotationSpeed() * ticks * 1.5) % 360);
                 float bobTime = (float) Math.toRadians(ticks * 4.0);
-                float orbitRadius = 0.95f;
+                float topAngle = (float) Math.toRadians((config.getCrystalRotationSpeed() * ticks * 0.8) % 360);
+                float topBob = (float) (Math.sin(Math.toRadians(ticks * 3.0)) * 0.08);
+                float orbitRadius = 1.70f;
                 boolean doParticles = config.isAmbientParticles() && (ticks % 6 == 0);
 
                 List<Map.Entry<UUID, WaypointEntities>> snapshot = new ArrayList<>(spawnedEntities.entrySet());
@@ -252,44 +312,70 @@ public class WaypointRenderer {
                     UUID wpId = entry.getKey();
                     Waypoint wp = waypointDataCache.get(wpId);
 
-                    if (entities.crystals == null || entities.crystals.isEmpty()) continue;
+                    // 1. Animate Top Large Relic Sphere
+                    if (entities.topRelic != null && entities.topRelic.isValid()) {
+                        Transformation topT = entities.topRelic.getTransformation();
+                        topT.getTranslation().set(0, topBob, 0);
+                        reusableQuat.rotationY(topAngle);
+                        topT.getLeftRotation().set(reusableQuat);
+                        entities.topRelic.setTransformation(topT);
 
-                    for (int i = 0; i < entities.crystals.size(); i++) {
-                        ItemDisplay crystal = entities.crystals.get(i);
-                        if (crystal == null || !crystal.isValid()) continue;
-
-                        float phaseOffset = (float) (i * 2.0 * Math.PI / 3.0);
-                        float angle = baseAngle + phaseOffset;
-                        float bobOffset = (float) (Math.sin(bobTime + phaseOffset) * config.getCrystalBobAmplitude());
-
-                        float x = (float) (Math.cos(angle) * orbitRadius);
-                        float z = (float) (Math.sin(angle) * orbitRadius);
-
-                        Transformation t = crystal.getTransformation();
-                        t.getScale().set(0.50f, 0.50f, 0.50f);
-                        t.getTranslation().set(x, bobOffset, z);
-
-                        // Spin each floating crystal on its own axis while it orbits
-                        reusableQuat.rotationY((float) (angle * 2.5)).rotateZ(0.20f);
-                        t.getLeftRotation().set(reusableQuat);
-                        crystal.setTransformation(t);
-
-                        // Ambient particles from each orbiting crystal
-                        if (doParticles && wp != null) {
-                            Location cLoc = entities.baseLocation.clone().add(x, 1.65 + bobOffset, z);
-                            Particle p;
-                            try {
-                                p = Particle.valueOf(wp.getParticleType());
-                            } catch (Exception e) {
-                                p = config.getAmbientParticle();
-                            }
-                            ParticleUtil.spawn(cLoc.getWorld(), p, cLoc, 1, 0.02, 0.02, 0.02, 0.01);
+                        // Subtle green sparkle ascending into the top relic
+                        if (ticks % 4 == 0 && entities.baseLocation != null) {
+                            Location sparkLoc = entities.baseLocation.clone().add(0, 3.25 + topBob, 0);
+                            ParticleUtil.spawn(sparkLoc.getWorld(), Particle.HAPPY_VILLAGER, sparkLoc, 1, 0.1, 0.05, 0.1, 0.01);
                         }
+                    }
 
-                        // Decaying visual: smoke if decaying
-                        if (wp != null && wp.isDecaying()) {
-                            Location cLoc = entities.baseLocation.clone().add(x, 1.65 + bobOffset, z);
-                            cLoc.getWorld().spawnParticle(Particle.SMOKE, cLoc, 1, 0.05, 0.05, 0.05, 0.01);
+                    // 2. Animate the 3 Orbiting Items (Floating around the 3x3 Waypoint)
+                    if (entities.crystals != null && !entities.crystals.isEmpty()) {
+                        for (int i = 0; i < entities.crystals.size(); i++) {
+                            ItemDisplay crystal = entities.crystals.get(i);
+                            if (crystal == null || !crystal.isValid()) continue;
+
+                            float phaseOffset = (float) (i * 2.0 * Math.PI / 3.0);
+                            float angle = baseAngle + phaseOffset;
+                            float bobOffset = (float) (Math.sin(bobTime + phaseOffset) * config.getCrystalBobAmplitude());
+
+                            float x = (float) (Math.cos(angle) * orbitRadius);
+                            float z = (float) (Math.sin(angle) * orbitRadius);
+
+                            Transformation t = crystal.getTransformation();
+                            t.getScale().set(0.50f, 0.50f, 0.50f);
+                            t.getTranslation().set(x, bobOffset, z);
+
+                            // Spin each floating crystal on its own axis with tilt
+                            reusableQuat.rotationY((float) (angle * 2.5)).rotateZ(0.20f);
+                            t.getLeftRotation().set(reusableQuat);
+                            crystal.setTransformation(t);
+
+                            // Ambient particles from each orbiting crystal
+                            if (doParticles && wp != null && entities.baseLocation != null) {
+                                Location cLoc = entities.baseLocation.clone().add(x, 1.75 + bobOffset, z);
+                                Particle p;
+                                try {
+                                    p = Particle.valueOf(wp.getParticleType());
+                                } catch (Exception e) {
+                                    p = config.getAmbientParticle();
+                                }
+                                ParticleUtil.spawn(cLoc.getWorld(), p, cLoc, 1, 0.02, 0.02, 0.02, 0.01);
+                            }
+
+                            // Decaying visual: smoke if decaying
+                            if (wp != null && wp.isDecaying() && entities.baseLocation != null) {
+                                Location cLoc = entities.baseLocation.clone().add(x, 1.75 + bobOffset, z);
+                                cLoc.getWorld().spawnParticle(Particle.SMOKE, cLoc, 1, 0.05, 0.05, 0.05, 0.01);
+                            }
+                        }
+                    }
+
+                    // 3. Ambient flame particles at the 4 corner braziers
+                    if (ticks % 8 == 0 && entities.baseLocation != null) {
+                        float dist = 1.05f;
+                        float[][] bCorners = {{-dist, -dist}, {dist, -dist}, {-dist, dist}, {dist, dist}};
+                        for (float[] bc : bCorners) {
+                            Location bLoc = entities.baseLocation.clone().add(bc[0], 1.18, bc[1]);
+                            bLoc.getWorld().spawnParticle(Particle.FLAME, bLoc, 1, 0.02, 0.04, 0.02, 0.005);
                         }
                     }
                 }
@@ -321,18 +407,20 @@ public class WaypointRenderer {
 
     private static class WaypointEntities {
         final List<BlockDisplay> structureBlocks;
-        final List<TextDisplay> runeDisplays;
         final List<ItemDisplay> crystals;
+        final ItemDisplay topRelic;
+        final ItemDisplay insetEye;
         final TextDisplay label;
         final Interaction interaction;
         final Location baseLocation;
 
-        WaypointEntities(List<BlockDisplay> structureBlocks, List<TextDisplay> runeDisplays,
-                         List<ItemDisplay> crystals, TextDisplay label, Interaction interaction,
-                         Location baseLocation) {
+        WaypointEntities(List<BlockDisplay> structureBlocks, List<ItemDisplay> crystals,
+                         ItemDisplay topRelic, ItemDisplay insetEye, TextDisplay label,
+                         Interaction interaction, Location baseLocation) {
             this.structureBlocks = structureBlocks;
-            this.runeDisplays = runeDisplays;
             this.crystals = crystals;
+            this.topRelic = topRelic;
+            this.insetEye = insetEye;
             this.label = label;
             this.interaction = interaction;
             this.baseLocation = baseLocation;
@@ -344,16 +432,13 @@ public class WaypointRenderer {
                     if (bd != null && bd.isValid()) bd.remove();
                 }
             }
-            if (runeDisplays != null) {
-                for (TextDisplay td : runeDisplays) {
-                    if (td != null && td.isValid()) td.remove();
-                }
-            }
             if (crystals != null) {
                 for (ItemDisplay id : crystals) {
                     if (id != null && id.isValid()) id.remove();
                 }
             }
+            if (topRelic != null && topRelic.isValid()) topRelic.remove();
+            if (insetEye != null && insetEye.isValid()) insetEye.remove();
             if (label != null && label.isValid()) label.remove();
             if (interaction != null && interaction.isValid()) interaction.remove();
         }
