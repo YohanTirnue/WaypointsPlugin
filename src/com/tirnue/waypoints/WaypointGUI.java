@@ -595,7 +595,8 @@ public class WaypointGUI {
                         UUID targetId = UUID.fromString(targetIdStr);
                         Waypoint targetWp = plugin.getWaypointManager().getWaypoint(targetId);
                         if (targetWp != null) {
-                            org.bukkit.Location dest = targetWp.toBukkitLocation();
+                            org.bukkit.Location dest = plugin.getTeleportManager().calculateSafeLandingLocation(targetWp);
+                            if (dest == null) dest = targetWp.toBukkitLocation();
                             if (dest != null) {
                                 player.closeInventory();
                                 player.teleport(dest);

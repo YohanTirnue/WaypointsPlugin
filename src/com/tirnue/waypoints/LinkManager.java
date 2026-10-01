@@ -23,7 +23,7 @@ import java.util.UUID;
 
 public class LinkManager {
 
-    private final JavaPlugin plugin;
+    private final TirnueWaypoints plugin;
     private final WaypointManager waypointManager;
     private final ConfigManager configManager;
     private final NamespacedKey KEY_LEDGER_MARKER;
@@ -36,7 +36,7 @@ public class LinkManager {
     private final Set<String> usedTokens = new HashSet<>();
     private final File tokensFile;
 
-    public LinkManager(JavaPlugin plugin, WaypointManager waypointManager, ConfigManager configManager) {
+    public LinkManager(TirnueWaypoints plugin, WaypointManager waypointManager, ConfigManager configManager) {
         this.plugin = plugin;
         this.waypointManager = waypointManager;
         this.configManager = configManager;
@@ -244,12 +244,24 @@ public class LinkManager {
         ParticleUtil.spawn(redeemer.getWorld(), org.bukkit.Particle.PORTAL, redeemer.getLocation().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
         redeemer.getWorld().playSound(redeemer.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
 
-        org.bukkit.Location dest = source.toBukkitLocation();
+        org.bukkit.Location dest = plugin.getTeleportManager().calculateSafeLandingLocation(source);
+        if (dest == null) dest = source.toBukkitLocation();
         if (dest != null) {
             redeemer.teleport(dest);
-            // Arrival FX
-            ParticleUtil.spawn(dest.getWorld(), org.bukkit.Particle.PORTAL, dest.clone().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
-            redeemer.getWorld().playSound(dest, org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+            // Arrival BOOM FX
+            org.bukkit.World destWorld = dest.getWorld();
+            if (destWorld != null) {
+                try {
+                    destWorld.playSound(dest, org.bukkit.Sound.ENTITY_GENERIC_EXPLODE, 0.85f, 1.5f);
+                    destWorld.playSound(dest, org.bukkit.Sound.ENTITY_PLAYER_TELEPORT, 1.0f, 1.0f);
+                    destWorld.playSound(dest, org.bukkit.Sound.ITEM_TOTEM_USE, 0.6f, 1.6f);
+                    destWorld.spawnParticle(org.bukkit.Particle.EXPLOSION, dest.clone().add(0, 1.0, 0), 2, 0.3, 0.3, 0.3, 0);
+                    destWorld.spawnParticle(org.bukkit.Particle.FLASH, dest.clone().add(0, 1.0, 0), 1, 0, 0, 0, 0);
+                } catch (Throwable ignored) {}
+                ParticleUtil.spawn(destWorld, org.bukkit.Particle.PORTAL, dest.getX(), dest.getY() + 1.0, dest.getZ(), 45, 0.8, 0.8, 0.8, 0.3);
+                ParticleUtil.spawn(destWorld, org.bukkit.Particle.FIREWORK, dest.getX(), dest.getY() + 1.0, dest.getZ(), 30, 0.5, 0.6, 0.5, 0.15);
+                ParticleUtil.spawn(destWorld, org.bukkit.Particle.END_ROD, dest.getX(), dest.getY() + 1.0, dest.getZ(), 20, 0.6, 0.7, 0.6, 0.2);
+            }
         }
 
         return true;
