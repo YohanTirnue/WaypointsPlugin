@@ -6,6 +6,8 @@ import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -271,6 +273,58 @@ public class ConfigManager {
     public int getMaxDurabilityForTier(String tier) {
         if (tier == null) return 100;
         return config.getInt("durability.max-durability." + tier.toLowerCase(), 100);
+    }
+
+    // --- Wayfarer's Grace ---
+    public boolean isGraceEnabled() {
+        return config.getBoolean("grace.enabled", true);
+    }
+
+    public boolean isGraceVisualFxEnabled() {
+        return config.getBoolean("grace.visual-fx", true);
+    }
+
+    public boolean isGraceNotifyPlayer() {
+        return config.getBoolean("grace.notify-player", true);
+    }
+
+    public boolean isGraceGlobalEnabled() {
+        return config.getBoolean("grace.global-waypoints-grant-grace", true);
+    }
+
+    public int getGraceDurationSeconds(String tier) {
+        if (tier == null) return 6;
+        return config.getInt("grace." + tier.toLowerCase() + ".duration-seconds", tier.equalsIgnoreCase("master") ? 10 : 6);
+    }
+
+    public List<PotionEffect> getGraceEffects(String tier) {
+        List<PotionEffect> effects = new java.util.ArrayList<>();
+        if (tier == null) return effects;
+        String t = tier.toLowerCase();
+        int durationTicks = getGraceDurationSeconds(tier) * 20;
+
+        org.bukkit.configuration.ConfigurationSection sec = config.getConfigurationSection("grace." + t + ".effects");
+        if (sec != null) {
+            for (String key : sec.getKeys(false)) {
+                PotionEffectType type = parsePotionEffectType(key);
+                if (type != null) {
+                    int amp = Math.max(0, sec.getInt(key, 1) - 1);
+                    effects.add(new PotionEffect(type, durationTicks, amp, false, true, true));
+                }
+            }
+        }
+        return effects;
+    }
+
+    @SuppressWarnings("deprecation")
+    public PotionEffectType parsePotionEffectType(String name) {
+        if (name == null) return null;
+        PotionEffectType type = PotionEffectType.getByName(name.toUpperCase());
+        if (type != null) return type;
+        try {
+            return org.bukkit.Registry.POTION_EFFECT_TYPE.get(org.bukkit.NamespacedKey.minecraft(name.toLowerCase()));
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     // --- Helpers ---

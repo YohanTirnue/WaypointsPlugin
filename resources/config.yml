@@ -254,3 +254,35 @@ durability:
   loss-per-teleport: 1
   # Cost in Vault currency to repair 1 point of durability
   vault-cost-per-point: 5.0
+
+# ------------------------------------------
+# Wayfarer's Grace (Arrival Protection Buffs)
+# Granted ONLY when arriving at UPGRADED waypoints!
+# Basic waypoints grant NO grace until upgraded.
+# ------------------------------------------
+grace:
+  # Enable arrival grace protection
+  enabled: true
+  # Play golden sanctuary arrival audio & particle burst
+  visual-fx: true
+  # Send chat notification message upon receiving Grace
+  notify-player: true
+  # Global server/event waypoints grant Master-tier Grace
+  global-waypoints-grant-grace: true
+  # Tier 1 Grace (Advanced Waypoints)
+  advanced:
+    duration-seconds: 6
+    effects:
+      DAMAGE_RESISTANCE: 1 # Resistance I
+      REGENERATION: 1      # Regeneration I
+      SPEED: 1             # Speed I
+  # Tier 2 Grace (Master Divine Sanctuary)
+  master:
+    duration-seconds: 10
+    effects:
+      DAMAGE_RESISTANCE: 2 # Resistance II
+      REGENERATION: 2      # Regeneration II
+      SPEED: 2             # Speed II
+      FIRE_RESISTANCE: 1   # Fire Resistance I
+      ABSORPTION: 1        # Absorption I (+2 Golden Hearts)
+

@@ -10,6 +10,7 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -526,12 +527,79 @@ public class TeleportManager {
             }.runTaskTimer(plugin, 1L, 1L);
         }
 
+        // 6. Wayfarer's Grace (Arrival Protection Buffs - limited to UPGRADED waypoints)
+        applyWayfarersGrace(player, teleport.to);
+
         // Set cooldown
         int cdSeconds = config.getCooldownSeconds();
         if (player.hasPermission("tirnue.waypoints.vip")) {
             cdSeconds = (int)(cdSeconds * config.getVipCooldownMultiplier());
         }
         cooldowns.put(pid, System.currentTimeMillis() + (cdSeconds * 1000L));
+    }
+
+    /**
+     * Applies Wayfarer's Grace (temporary arrival protection buffs) to the arriving player.
+     * STRICT RULE: Only granted when arriving at UPGRADED waypoints (Advanced or Master).
+     * Basic waypoints grant NO grace until upgraded!
+     */
+    private void applyWayfarersGrace(Player player, Waypoint to) {
+        if (!config.isGraceEnabled()) return;
+        if (to == null || player == null || !player.isOnline()) return;
+
+        String tier = to.getTier() != null ? to.getTier().toUpperCase() : "BASIC";
+        if (to.isGlobal() && config.isGraceGlobalEnabled()) {
+            if (tier.equals("BASIC")) tier = "MASTER";
+        }
+
+        // Only granted for upgraded waypoints!
+        if (tier.equals("BASIC")) {
+            return;
+        }
+
+        java.util.List<PotionEffect> effects = config.getGraceEffects(tier);
+        if (effects == null || effects.isEmpty()) return;
+
+        for (PotionEffect effect : effects) {
+            player.addPotionEffect(effect);
+        }
+
+        int duration = config.getGraceDurationSeconds(tier);
+
+        // Visual FX and sanctuary sounds
+        if (config.isGraceVisualFxEnabled()) {
+            World world = player.getWorld();
+            Location pLoc = player.getLocation();
+            if (tier.equals("MASTER")) {
+                // Master Divine Sanctuary
+                try {
+                    world.playSound(pLoc, Sound.ITEM_TOTEM_USE, 0.7f, 1.4f);
+                    world.playSound(pLoc, Sound.BLOCK_BEACON_ACTIVATE, 0.85f, 1.6f);
+                    world.spawnParticle(Particle.TOTEM_OF_UNDYING, pLoc.clone().add(0, 1.0, 0), 30, 0.5, 0.7, 0.5, 0.15);
+                    world.spawnParticle(Particle.WAX_ON, pLoc.clone().add(0, 1.2, 0), 20, 0.4, 0.5, 0.4, 0.1);
+                    world.spawnParticle(Particle.END_ROD, pLoc.clone().add(0, 0.2, 0), 15, 0.5, 0.2, 0.5, 0.05);
+                } catch (Throwable ignored) {}
+            } else {
+                // Advanced Tier 1 Grace
+                try {
+                    world.playSound(pLoc, Sound.BLOCK_BEACON_POWER_SELECT, 1.0f, 1.4f);
+                    world.playSound(pLoc, Sound.ENTITY_PLAYER_LEVELUP, 0.6f, 1.8f);
+                    world.spawnParticle(Particle.TOTEM_OF_UNDYING, pLoc.clone().add(0, 1.0, 0), 20, 0.4, 0.6, 0.4, 0.1);
+                    world.spawnParticle(Particle.ENCHANT, pLoc.clone().add(0, 1.0, 0), 25, 0.5, 0.5, 0.5, 0.2);
+                } catch (Throwable ignored) {}
+            }
+        }
+
+        // Notification
+        if (config.isGraceNotifyPlayer()) {
+            if (tier.equals("MASTER")) {
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                        config.getPrefix() + " &6✦ &lWayfarer's Grace &e(Master Sanctuary): &fDivine protection active for &e" + duration + "s&f!"));
+            } else {
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                        config.getPrefix() + " &a✦ &lWayfarer's Grace &7(Advanced): &fArrival protection active for &a" + duration + "s&f!"));
+            }
+        }
     }
 
     public void cancelTeleport(UUID playerUUID, String reason) {

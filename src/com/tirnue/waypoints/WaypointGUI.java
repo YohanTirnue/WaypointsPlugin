@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -488,6 +489,9 @@ public class WaypointGUI {
                         if (plugin.getConfigManager().isDurabilityEnabled()) {
                             dLore.add("&7Integrity: &a∞ Infinite (Global)");
                         }
+                        if (plugin.getConfigManager().isGraceEnabled()) {
+                            dLore.add("&6✦ Wayfarer's Grace: &eMaster Divine Sanctuary");
+                        }
                         dLore.add("");
                         dLore.add("&eClick to warp | &7Shift-click to favorite");
 
@@ -500,6 +504,16 @@ public class WaypointGUI {
                         dLore.add("&7Warp Time: &f" + String.format("%.1fs", time));
                         if (plugin.getConfigManager().isDurabilityEnabled()) {
                             dLore.add("&7Integrity: &a" + dest.getDurability() + "&7/&a" + dest.getMaxDurability());
+                        }
+                        if (plugin.getConfigManager().isGraceEnabled()) {
+                            String dTier = dest.getTier() != null ? dest.getTier().toUpperCase() : "BASIC";
+                            if (dTier.equals("MASTER")) {
+                                dLore.add("&6✦ Wayfarer's Grace: &eTier II Master Sanctuary");
+                            } else if (dTier.equals("ADVANCED")) {
+                                dLore.add("&a✦ Wayfarer's Grace: &fTier I Arrival Protection");
+                            } else {
+                                dLore.add("&8No arrival grace (Basic waypoint)");
+                            }
                         }
                         if (dest.getUsageFee() > 0 && !dest.isOwner(pId)) {
                             dLore.add("&6Usage Fee: &a$" + String.format("%.2f", dest.getUsageFee()));
@@ -619,18 +633,36 @@ public class WaypointGUI {
         else if (tier.equalsIgnoreCase("ADVANCED")) nextTier = "MASTER";
         
         if (nextTier.equals("none")) {
-            inv.setItem(25, createItem(Material.ANVIL, "&6⬆ Upgrade", "&7Max tier reached"));
+            inv.setItem(25, createItem(Material.ANVIL, "&6⬆ Upgrade", "&7Max tier reached (Master Sanctuary)"));
         } else {
             double cost = plugin.getConfig().getDouble("tiers." + nextTier.toLowerCase() + ".upgrade-cost-economy", 0);
-            inv.setItem(25, createItem(Material.ANVIL, "&6⬆ Upgrade", "&7Current tier: &f" + tier, "&7Next tier: &f" + nextTier, "&7Cost: &a$" + cost + " &7+ items"));
+            inv.setItem(25, createItem(Material.ANVIL, "&6⬆ Upgrade Waypoint",
+                "&7Current tier: &f" + tier,
+                "&7Next tier: &e" + nextTier,
+                "&7Cost: &a$" + cost + " &7+ items",
+                "",
+                (nextTier.equals("ADVANCED") ? "&a✦ Unlocks Wayfarer's Grace (Tier I)!" : "&6✦ Upgrades to Master Divine Sanctuary!"),
+                "&eClick to preview & confirm upgrade"));
         }
 
         // Row 4
+        String graceDesc;
+        if (wp.isGlobal()) {
+            graceDesc = "&6Master Divine Sanctuary &7(Always Active)";
+        } else if (tier.equalsIgnoreCase("MASTER")) {
+            graceDesc = "&6Tier II Master Sanctuary &7(Active)";
+        } else if (tier.equalsIgnoreCase("ADVANCED")) {
+            graceDesc = "&aTier I Active &7(Resistance, Regen, Speed)";
+        } else {
+            graceDesc = "&cLocked &7(Upgrade waypoint to unlock!)";
+        }
+
         inv.setItem(29, createItem(Material.LODESTONE, "&f✦ " + wp.getName(),
             "&7Owner: &f" + wp.getOwnerName(),
             "&7World: &f" + wp.getWorldName(),
             "&7Coords: &f" + (int)wp.getX() + ", " + (int)wp.getY() + ", " + (int)wp.getZ(),
             "&7Tier: &f" + tier,
+            "&7Wayfarer's Grace: " + graceDesc,
             "&7Created: &f" + new java.text.SimpleDateFormat("yyyy-MM-dd").format(new Date(wp.getCreatedAt()))));
             
         inv.setItem(31, createItem(Material.GOLD_INGOT, "&6$ Usage Fee", "&7Current fee: &a$" + String.format("%.2f", wp.getUsageFee()), "&eClick to change"));
@@ -803,10 +835,30 @@ public class WaypointGUI {
         lore.add("&eClick to confirm");
         
         inv.setItem(13, createItem(Material.EMERALD_BLOCK, "&aConfirm Upgrade", lore.toArray(new String[0])));
-        inv.setItem(11, createItem(Material.EXPERIENCE_BOTTLE, "&bBenefits", 
-            "&7Max Links: &f" + maxLinks,
-            "&7Max Trusted: &f" + maxTrusted,
-            "&7Speed Multiplier: &f" + speedMult + "x"));
+        
+        int maxDur = plugin.getConfigManager().getMaxDurabilityForTier(nextTier);
+        List<String> bLore = new ArrayList<>();
+        bLore.add("&7Max Outgoing Links: &f" + maxLinks);
+        bLore.add("&7Max Trusted Allies: &f" + maxTrusted);
+        bLore.add("&7Warp Speed Boost: &f" + speedMult + "x");
+        bLore.add("&7Max Durability: &f" + maxDur + " pts");
+        bLore.add("");
+        if (nextTier.equals("ADVANCED")) {
+            bLore.add("&a✦ Unlocks Wayfarer's Grace (Tier I)!");
+            bLore.add("  &7Arriving travelers receive 6s of:");
+            bLore.add("  &f- Resistance I &7(Damage Reduction)");
+            bLore.add("  &f- Regeneration I &7(Health Recovery)");
+            bLore.add("  &f- Speed I &7(Mobility)");
+        } else if (nextTier.equals("MASTER")) {
+            bLore.add("&6✦ Upgrades to Master Divine Sanctuary!");
+            bLore.add("  &7Arriving travelers receive 10s of:");
+            bLore.add("  &f- Resistance II &7(Empowered Protection)");
+            bLore.add("  &f- Regeneration II &7(Rapid Healing)");
+            bLore.add("  &f- Speed II &7(High Velocity)");
+            bLore.add("  &f- Fire Resistance I &7(Lava/Fire Immune)");
+            bLore.add("  &f- Absorption I &7(+2 Golden Hearts)");
+        }
+        inv.setItem(11, createItem(Material.EXPERIENCE_BOTTLE, "&b✦ Upgrade Benefits", bLore.toArray(new String[0])));
         inv.setItem(18, createItem(Material.ARROW, "&7Back", "&7Return to management menu"));
         inv.setItem(22, createItem(Material.BARRIER, "&cCancel", "&7Return to management menu"));
 
@@ -1242,8 +1294,23 @@ public class WaypointGUI {
                     if (econ != null) econ.withdrawPlayer(player, cost);
                     
                     wp.setTier(nextTier.toUpperCase());
+                    int newMaxDur = plugin.getConfigManager().getMaxDurabilityForTier(nextTier);
+                    wp.setMaxDurability(newMaxDur);
+                    wp.repairDurability(newMaxDur);
                     plugin.getWaypointManager().saveAsync();
-                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &a✦ Waypoint upgraded to " + nextTier.toUpperCase() + "!"));
+
+                    player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
+                    player.playSound(player.getLocation(), Sound.BLOCK_BEACON_POWER_SELECT, 1.0f, 1.2f);
+                    if (wp.toBukkitLocation() != null) {
+                        player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, wp.toBukkitLocation().add(0, 1.5, 0), 40, 0.6, 0.8, 0.6, 0.2);
+                    }
+
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &a✦ Waypoint upgraded to &e" + nextTier.toUpperCase() + "&a!"));
+                    if (nextTier.equalsIgnoreCase("ADVANCED")) {
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &a✦ &lWayfarer's Grace (Tier I) Unlocked! &fTravelers arriving here now receive Resistance, Regen & Speed buffs!"));
+                    } else if (nextTier.equalsIgnoreCase("MASTER")) {
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &6✦ &lWayfarer's Grace (Master Sanctuary) Unlocked! &fTravelers arriving here receive empowered divine buffs!"));
+                    }
                     openManagementMenu(player, wp);
                 }
                 break;
