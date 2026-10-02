@@ -11,6 +11,7 @@ public class TirnueWaypoints extends JavaPlugin {
     private WaypointRenderer waypointRenderer;
     private TeleportManager teleportManager;
     private LinkManager linkManager;
+    private ScrollManager scrollManager;
     private WaypointGUI waypointGUI;
     private Economy economy;
 
@@ -26,6 +27,9 @@ public class TirnueWaypoints extends JavaPlugin {
         
         linkManager = new LinkManager(this, waypointManager, configManager);
         linkManager.loadUsedTokens();
+
+        scrollManager = new ScrollManager(this, waypointManager, configManager);
+        scrollManager.registerRecipe();
         
         waypointRenderer = new WaypointRenderer(this, configManager);
         teleportManager = new TeleportManager(this, configManager, waypointRenderer);
@@ -62,6 +66,9 @@ public class TirnueWaypoints extends JavaPlugin {
         if (linkManager != null) {
             linkManager.saveUsedTokensSync(); // sync save - scheduler is dead during disable
         }
+        if (scrollManager != null) {
+            scrollManager.unregisterRecipe();
+        }
         getLogger().info("TirnueWaypoints disabled!");
     }
 
@@ -82,6 +89,7 @@ public class TirnueWaypoints extends JavaPlugin {
     public WaypointRenderer getWaypointRenderer() { return waypointRenderer; }
     public TeleportManager getTeleportManager() { return teleportManager; }
     public LinkManager getLinkManager() { return linkManager; }
+    public ScrollManager getScrollManager() { return scrollManager; }
     public WaypointGUI getWaypointGUI() { return waypointGUI; }
     public Economy getEconomy() { return economy; }
 }

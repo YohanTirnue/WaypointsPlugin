@@ -193,6 +193,45 @@ public class WaypointCommand implements CommandExecutor, TabCompleter {
                     target.getInventory().addItem(core);
                     player.sendMessage(c("&aGave " + amount + " core(s) to " + target.getName()));
                 }
+            } else if (adminSub.equals("givescroll")) {
+                if (args.length < 3) {
+                    player.sendMessage(c("&cUsage: /wp admin givescroll <player> [blank|<waypoint_name>] [amount]"));
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null) {
+                    player.sendMessage(c("&cPlayer not found."));
+                    return true;
+                }
+
+                String targetType = args.length > 3 ? args[3] : "blank";
+                int amount = 1;
+                if (args.length > 4) {
+                    try {
+                        amount = Math.max(1, Integer.parseInt(args[4]));
+                    } catch (NumberFormatException ignored) {}
+                }
+
+                if (targetType.equalsIgnoreCase("blank")) {
+                    ItemStack scroll = plugin.getScrollManager().generateBlankScroll(amount);
+                    target.getInventory().addItem(scroll);
+                    player.sendMessage(c("&aGave " + amount + " Blank Waystone Scroll(s) to " + target.getName()));
+                } else {
+                    Waypoint wp = null;
+                    for (Waypoint w : plugin.getWaypointManager().getAllWaypoints()) {
+                        if (w.getName().equalsIgnoreCase(targetType)) {
+                            wp = w;
+                            break;
+                        }
+                    }
+                    if (wp == null) {
+                        player.sendMessage(c("&cWaypoint '" + targetType + "' not found. Use 'blank' or a valid waypoint name."));
+                        return true;
+                    }
+                    ItemStack scroll = plugin.getScrollManager().generateAttunedScroll(wp, amount);
+                    target.getInventory().addItem(scroll);
+                    player.sendMessage(c("&aGave " + amount + " Attuned Waystone Scroll(s) for &e" + wp.getName() + " &ato " + target.getName()));
+                }
             } else if (adminSub.equals("reload")) {
                 plugin.getConfigManager().reloadConfig();
                 player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aConfig reloaded."));
@@ -228,7 +267,14 @@ public class WaypointCommand implements CommandExecutor, TabCompleter {
             comps.add("remove"); comps.add("menu"); comps.add("help");
             if (checkAdmin(sender)) comps.add("admin");
         } else if (args.length == 2 && args[0].equalsIgnoreCase("admin") && checkAdmin(sender)) {
-            comps.add("setglobal"); comps.add("removeglobal"); comps.add("remove"); comps.add("give"); comps.add("reload"); comps.add("network");
+            comps.add("setglobal"); comps.add("removeglobal"); comps.add("remove"); comps.add("give"); comps.add("givescroll"); comps.add("reload"); comps.add("network");
+        } else if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("givescroll") && checkAdmin(sender)) {
+            for (Player p : Bukkit.getOnlinePlayers()) comps.add(p.getName());
+        } else if (args.length == 4 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("givescroll") && checkAdmin(sender)) {
+            comps.add("blank");
+            for (Waypoint w : plugin.getWaypointManager().getAllWaypoints()) comps.add(w.getName());
+        } else if (args.length == 5 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("givescroll") && checkAdmin(sender)) {
+            comps.add("1"); comps.add("4"); comps.add("16"); comps.add("64");
         }
         return comps;
     }

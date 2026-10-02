@@ -167,6 +167,19 @@ guest-pass:
   max-per-waypoint: 10
 
 # ------------------------------------------
+# Waystone Warp Scrolls (Wilderness Teleport)
+# ------------------------------------------
+scrolls:
+  # Enable crafting Blank Waystone Scrolls in crafting tables
+  crafting-enabled: true
+  # Warmup channeling time in seconds when warping via scroll
+  warmup-seconds: 4.0
+  # Display name for blank scroll
+  blank-name: "&b✦ Blank Waystone Scroll"
+  # Display name format for attuned scroll
+  attuned-name: "&d✦ Waystone Scroll: &f{destination}"
+
+# ------------------------------------------
 # Waypoint Decay (Inactive Owner Cleanup)
 # ------------------------------------------
 decay:

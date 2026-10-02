@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -326,6 +327,7 @@ public class WaypointGUI {
         
         // Row 3
         inv.setItem(19, createItem(Material.WRITABLE_BOOK, "&d✉ Link Ledger", "&7Generate a linking code"));
+        inv.setItem(20, createItem(Material.MAP, "&d✦ Inscribe Warp Scroll", "&7Create a single-use scroll", "&7bound to this waypoint.", "", "&7Cost: &f1 Blank Scroll", "&7(or &f1 Pearl + 1 Paper&7)", "", "&eClick to inscribe"));
         inv.setItem(21, createItem(Material.PAPER, "&e✦ Guest Pass", "&7Create single-use pass"));
         inv.setItem(23, createItem(Material.PAINTING, "&d✿ Customize", "&7Particles & crystal"));
         
@@ -687,6 +689,40 @@ public class WaypointGUI {
                     ItemStack ledger = plugin.getLinkManager().generateLedger(wp);
                     player.getInventory().addItem(ledger);
                     player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aLink ledger generated."));
+                } else if (slot == 20) { // Inscribe Warp Scroll
+                    boolean inscribed = false;
+                    for (int i = 0; i < player.getInventory().getSize(); i++) {
+                        ItemStack it = player.getInventory().getItem(i);
+                        if (plugin.getScrollManager().isBlankScroll(it)) {
+                            it.setAmount(it.getAmount() - 1);
+                            player.getInventory().setItem(i, it);
+                            inscribed = true;
+                            break;
+                        }
+                    }
+                    if (!inscribed) {
+                        if (player.getInventory().containsAtLeast(new ItemStack(Material.ENDER_PEARL), 1)
+                                && player.getInventory().containsAtLeast(new ItemStack(Material.PAPER), 1)) {
+                            player.getInventory().removeItem(new ItemStack(Material.ENDER_PEARL, 1));
+                            player.getInventory().removeItem(new ItemStack(Material.PAPER, 1));
+                            inscribed = true;
+                        }
+                    }
+
+                    if (inscribed) {
+                        ItemStack scroll = plugin.getScrollManager().generateAttunedScroll(wp, 1);
+                        if (player.getInventory().firstEmpty() == -1) {
+                            player.getWorld().dropItemNaturally(player.getLocation(), scroll);
+                        } else {
+                            player.getInventory().addItem(scroll);
+                        }
+                        player.playSound(player.getLocation(), Sound.ITEM_LODESTONE_COMPASS_LOCK, 1.0f, 1.2f);
+                        player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 1.0f, 1.5f);
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &a✦ Inscribed a Waystone Warp Scroll for &e" + wp.getName() + "&a!"));
+                    } else {
+                        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.7f);
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cYou need a Blank Waystone Scroll (or 1 Ender Pearl + 1 Paper) to inscribe a scroll!"));
+                    }
                 } else if (slot == 21) { // Guest Pass
                     ItemStack pass = plugin.getLinkManager().generateGuestPass(wp);
                     player.getInventory().addItem(pass);

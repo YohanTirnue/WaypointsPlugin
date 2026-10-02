@@ -238,6 +238,23 @@ public class ConfigManager {
         return c(msg);
     }
 
+    // --- Scrolls ---
+    public boolean isScrollCraftingEnabled() {
+        return config.getBoolean("scrolls.crafting-enabled", true);
+    }
+
+    public double getScrollWarmupSeconds() {
+        return config.getDouble("scrolls.warmup-seconds", 4.0);
+    }
+
+    public String getBlankScrollName() {
+        return config.getString("scrolls.blank-name", "&b✦ Blank Waystone Scroll");
+    }
+
+    public String getAttunedScrollNameFormat() {
+        return config.getString("scrolls.attuned-name", "&d✦ Waystone Scroll: &f{destination}");
+    }
+
     // --- Helpers ---
     private String c(String s) {
         if (s == null) return "";

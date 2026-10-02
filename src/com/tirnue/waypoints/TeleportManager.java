@@ -219,6 +219,132 @@ public class TeleportManager {
         return true;
     }
 
+    public boolean startScrollTeleport(Player player, Waypoint to, ItemStack scrollItem) {
+        UUID pid = player.getUniqueId();
+
+        if (isCurrentlyTeleporting(pid)) {
+            player.sendMessage(config.getPrefix() + ChatColor.RED + "You are already channeling a teleportation!");
+            return false;
+        }
+
+        if (isOnCooldown(pid)) {
+            player.sendMessage(config.getPrefix() + config.getMessage("teleport-cooldown").replace("{seconds}", String.valueOf(getCooldownRemaining(pid))));
+            return false;
+        }
+
+        Location destinationLanding = calculateSafeLandingLocation(to);
+        if (destinationLanding == null) {
+            player.sendMessage(config.getPrefix() + ChatColor.RED + "Destination waypoint world is not available!");
+            return false;
+        }
+
+        int totalTicks = Math.max(20, (int) (config.getScrollWarmupSeconds() * 20));
+        ActiveTeleport teleport = new ActiveTeleport(player, null, to, player.getLocation(), destinationLanding, totalTicks, 0, true, scrollItem);
+        activeTeleports.put(pid, teleport);
+
+        teleport.task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!player.isOnline()) {
+                    cancelTeleport(pid, "offline");
+                    return;
+                }
+
+                if (config.isCancelOnMove()) {
+                    if (player.getLocation().distanceSquared(teleport.startLocation) > config.getMoveThreshold() * config.getMoveThreshold()) {
+                        cancelTeleport(pid, config.getPrefix() + config.getMessage("teleport-cancelled-move"));
+                        return;
+                    }
+                }
+
+                if (config.isCancelOnDamage()) {
+                    if (player.getHealth() < teleport.initialHealth) {
+                        cancelTeleport(pid, config.getPrefix() + config.getMessage("teleport-cancelled-damage"));
+                        return;
+                    }
+                }
+
+                teleport.initialHealth = Math.min(teleport.initialHealth, player.getHealth());
+
+                teleport.ticksElapsed++;
+                double progress = Math.min(1.0, (double) teleport.ticksElapsed / teleport.totalTicks);
+                Location pLoc = player.getLocation();
+
+                // Channeling FX at origin
+                if (teleport.ticksElapsed % 2 == 0) {
+                    double radius = 1.8 - (progress * 1.5);
+                    int particles = 4 + (int) (progress * 10);
+                    for (int i = 0; i < particles; i++) {
+                        double angle = 2 * Math.PI * i / particles + (teleport.ticksElapsed * 0.25);
+                        double px = pLoc.getX() + Math.cos(angle) * radius;
+                        double pz = pLoc.getZ() + Math.sin(angle) * radius;
+                        double py = pLoc.getY() + 0.1 + progress * 2.0;
+                        ParticleUtil.spawn(pLoc.getWorld(), Particle.PORTAL, px, py, pz, 1, 0, 0, 0, 0);
+                    }
+                }
+
+                if (teleport.ticksElapsed % 10 == 0) {
+                    player.playSound(pLoc, Sound.BLOCK_BEACON_AMBIENT, (float) (0.4 + progress * 0.6), (float) (0.8 + progress * 1.2));
+                }
+
+                // Materialization FX at destination
+                if (teleport.destinationLanding != null && teleport.destinationLanding.getWorld() != null) {
+                    Location dLoc = teleport.destinationLanding;
+                    World dWorld = dLoc.getWorld();
+                    int dcx = dLoc.getBlockX() >> 4;
+                    int dcz = dLoc.getBlockZ() >> 4;
+
+                    if (dWorld.isChunkLoaded(dcx, dcz)) {
+                        if (teleport.ticksElapsed % 2 == 0) {
+                            double circleRadius = 0.85;
+                            int points = 8;
+                            double spin = teleport.ticksElapsed * 0.15;
+                            for (int i = 0; i < points; i++) {
+                                double angle = spin + (2 * Math.PI * i / points);
+                                double cx = dLoc.getX() + Math.cos(angle) * circleRadius;
+                                double cz = dLoc.getZ() + Math.sin(angle) * circleRadius;
+                                ParticleUtil.spawn(dWorld, Particle.PORTAL, cx, dLoc.getY() + 0.08, cz, 1, 0, 0.02, 0, 0.01);
+                            }
+
+                            double helixRadius = 0.55;
+                            double hRot = teleport.ticksElapsed * 0.35;
+                            double hx1 = dLoc.getX() + Math.cos(hRot) * helixRadius;
+                            double hz1 = dLoc.getZ() + Math.sin(hRot) * helixRadius;
+                            double hy = dLoc.getY() + (teleport.ticksElapsed % 20) * (2.0 / 20.0);
+
+                            ParticleUtil.spawn(dWorld, Particle.REVERSE_PORTAL, hx1, hy, hz1, 1, 0, 0.02, 0, 0.01);
+                        }
+
+                        if (teleport.ticksElapsed % 4 == 0) {
+                            ParticleUtil.spawn(dWorld, Particle.END_ROD, dLoc.getX(), dLoc.getY() + 1.0, dLoc.getZ(), 2, 0.25, 0.5, 0.25, 0.02);
+                        }
+
+                        if (teleport.ticksElapsed % 20 == 0) {
+                            try {
+                                dWorld.playSound(dLoc, Sound.BLOCK_RESPAWN_ANCHOR_CHARGE, (float) (0.4 + progress * 0.6), (float) (1.0 + progress * 0.5));
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                }
+
+                // Action bar progress
+                if (teleport.ticksElapsed % 4 == 0 || teleport.ticksElapsed >= teleport.totalTicks) {
+                    int bars = (int) (progress * 10);
+                    double timeRemaining = (teleport.totalTicks - teleport.ticksElapsed) / 20.0;
+                    String msg = "\u00a7dScroll Warping: \u00a7f[\u00a7a" + "\u25a0".repeat(bars) + "\u00a77" + "\u25a1".repeat(10 - bars) + "\u00a7f] \u00a7e" + String.format("%.1fs", Math.max(0.0, timeRemaining));
+                    player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(msg));
+                }
+
+                if (teleport.ticksElapsed >= teleport.totalTicks) {
+                    completeTeleport(pid, teleport);
+                    this.cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 1L, 1L);
+
+        return true;
+    }
+
     private void completeTeleport(UUID pid, ActiveTeleport teleport) {
         activeTeleports.remove(pid);
         Player player = teleport.player;
@@ -236,31 +362,40 @@ public class TeleportManager {
             return;
         }
 
-        // Deduct cost
-        if (config.isCostEnabled() && !(teleport.to.isGlobal() && config.isGlobalWaypointsFree())) {
-            String type = config.getCostType();
-            if ("ECONOMY".equalsIgnoreCase(type)) {
-                Economy econ = plugin.getEconomy();
-                if (econ != null) econ.withdrawPlayer(player, teleport.costAmount);
-            } else if ("XP".equalsIgnoreCase(type)) {
-                player.setLevel(player.getLevel() - config.getXpLevelsPerWarp());
-            } else if ("ITEM".equalsIgnoreCase(type)) {
-                player.getInventory().removeItem(new ItemStack(config.getCostItemType(), config.getCostItemAmount()));
+        // Deduct cost or consume scroll
+        if (teleport.isScrollWarp) {
+            boolean consumed = plugin.getScrollManager().consumeScroll(player, teleport.to.getId());
+            if (!consumed) {
+                player.sendMessage(config.getPrefix() + ChatColor.RED + "Teleport cancelled: You no longer possess the attuned scroll!");
+                player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(""));
+                return;
             }
-        }
+        } else {
+            if (config.isCostEnabled() && !(teleport.to.isGlobal() && config.isGlobalWaypointsFree())) {
+                String type = config.getCostType();
+                if ("ECONOMY".equalsIgnoreCase(type)) {
+                    Economy econ = plugin.getEconomy();
+                    if (econ != null) econ.withdrawPlayer(player, teleport.costAmount);
+                } else if ("XP".equalsIgnoreCase(type)) {
+                    player.setLevel(player.getLevel() - config.getXpLevelsPerWarp());
+                } else if ("ITEM".equalsIgnoreCase(type)) {
+                    player.getInventory().removeItem(new ItemStack(config.getCostItemType(), config.getCostItemAmount()));
+                }
+            }
 
-        if (teleport.to.getUsageFee() > 0 && !teleport.to.isOwner(pid)) {
-            Economy econ = plugin.getEconomy();
-            if (econ != null && plugin.getConfig().getBoolean("rent.enabled", false)) {
-                double fee = teleport.to.getUsageFee();
-                double taxRate = plugin.getConfig().getDouble("rent.server-tax-percent", 10) / 100.0;
-                double ownerCut = fee * (1.0 - taxRate);
-                econ.withdrawPlayer(player, fee);
-                final UUID ownerUUID = teleport.to.getOwnerUUID();
-                final double finalOwnerCut = ownerCut;
-                org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                    econ.depositPlayer(org.bukkit.Bukkit.getOfflinePlayer(ownerUUID), finalOwnerCut);
-                });
+            if (teleport.to.getUsageFee() > 0 && !teleport.to.isOwner(pid)) {
+                Economy econ = plugin.getEconomy();
+                if (econ != null && plugin.getConfig().getBoolean("rent.enabled", false)) {
+                    double fee = teleport.to.getUsageFee();
+                    double taxRate = plugin.getConfig().getDouble("rent.server-tax-percent", 10) / 100.0;
+                    double ownerCut = fee * (1.0 - taxRate);
+                    econ.withdrawPlayer(player, fee);
+                    final UUID ownerUUID = teleport.to.getOwnerUUID();
+                    final double finalOwnerCut = ownerCut;
+                    org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                        econ.depositPlayer(org.bukkit.Bukkit.getOfflinePlayer(ownerUUID), finalOwnerCut);
+                    });
+                }
             }
         }
 
@@ -286,14 +421,23 @@ public class TeleportManager {
 
         // 3. Clear action bar and send success message
         player.sendActionBar(LegacyComponentSerializer.legacySection().deserialize(""));
-        String successMsg = config.getMessage("teleport-success");
-        if (successMsg != null && !successMsg.isEmpty()) {
-            player.sendMessage(config.getPrefix() + successMsg.replace("{destination}", teleport.to.getName()));
+        if (teleport.isScrollWarp) {
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                    config.getPrefix() + " &a✦ Teleported to &e" + teleport.to.getName() + " &avia Waystone Scroll!"));
+        } else {
+            String successMsg = config.getMessage("teleport-success");
+            if (successMsg != null && !successMsg.isEmpty()) {
+                player.sendMessage(config.getPrefix() + successMsg.replace("{destination}", teleport.to.getName()));
+            }
         }
 
-        // 4. Log activity on both waypoints
-        teleport.from.addActivity(player.getName(), player.getUniqueId(), "WARP_FROM", teleport.to.getName());
-        teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
+        // 4. Log activity
+        if (teleport.from != null) {
+            teleport.from.addActivity(player.getName(), player.getUniqueId(), "WARP_FROM", teleport.to.getName());
+            teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
+        } else {
+            teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_SCROLL", "Wilderness");
+        }
 
         // 5. BOOM particles & sound everywhere after teleporting!
         World destWorld = dest.getWorld();
@@ -480,8 +624,14 @@ public class TeleportManager {
         int ticksElapsed;
         double costAmount;
         BukkitTask task;
+        boolean isScrollWarp;
+        ItemStack scrollItem;
 
         ActiveTeleport(Player player, Waypoint from, Waypoint to, Location startLocation, Location destinationLanding, int totalTicks, double costAmount) {
+            this(player, from, to, startLocation, destinationLanding, totalTicks, costAmount, false, null);
+        }
+
+        ActiveTeleport(Player player, Waypoint from, Waypoint to, Location startLocation, Location destinationLanding, int totalTicks, double costAmount, boolean isScrollWarp, ItemStack scrollItem) {
             this.player = player;
             this.from = from;
             this.to = to;
@@ -491,6 +641,8 @@ public class TeleportManager {
             this.totalTicks = totalTicks;
             this.costAmount = costAmount;
             this.ticksElapsed = 0;
+            this.isScrollWarp = isScrollWarp;
+            this.scrollItem = scrollItem;
         }
     }
 }

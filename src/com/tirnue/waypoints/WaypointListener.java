@@ -16,6 +16,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -139,6 +140,26 @@ public class WaypointListener implements Listener {
         if (hand.getType() == Material.COMPASS || hand.getType() == Material.RECOVERY_COMPASS) {
             event.setCancelled(true);
             attuneCompass(player, wp, hand);
+            return;
+        }
+
+        // 1b. Check if player is holding a Blank Waystone Scroll to attune it!
+        ItemStack main = player.getInventory().getItemInMainHand();
+        ItemStack off = player.getInventory().getItemInOffHand();
+        if (plugin.getScrollManager().isBlankScroll(main)) {
+            event.setCancelled(true);
+            plugin.getScrollManager().attuneScroll(player, wp, EquipmentSlot.HAND);
+            return;
+        } else if (plugin.getScrollManager().isBlankScroll(off)) {
+            event.setCancelled(true);
+            plugin.getScrollManager().attuneScroll(player, wp, EquipmentSlot.OFF_HAND);
+            return;
+        }
+
+        if (plugin.getScrollManager().isAttunedScroll(main) || plugin.getScrollManager().isAttunedScroll(off)) {
+            event.setCancelled(true);
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                    plugin.getConfigManager().getPrefix() + " &7You are already standing at a waypoint! Right-click this scroll while exploring in the wilderness."));
             return;
         }
 
@@ -318,14 +339,41 @@ public class WaypointListener implements Listener {
         }
         if (hand.getType() == Material.AIR) return;
 
-        // Check Guest Pass redemption anywhere!
+        // 1. Check Attuned Waystone Scroll warp anywhere in the wild!
+        if (plugin.getScrollManager().isAttunedScroll(hand)) {
+            event.setCancelled(true);
+            UUID targetWpId = plugin.getScrollManager().getTargetWaypointId(hand);
+            if (targetWpId == null) {
+                player.sendMessage(plugin.getConfigManager().getPrefix() + ChatColor.RED + "Invalid warp scroll data.");
+                return;
+            }
+
+            Waypoint dest = plugin.getWaypointManager().getWaypoint(targetWpId);
+            if (dest == null) {
+                player.sendMessage(plugin.getConfigManager().getPrefix() + ChatColor.RED + "The destination waypoint bound to this scroll no longer exists!");
+                return;
+            }
+
+            plugin.getTeleportManager().startScrollTeleport(player, dest, hand);
+            return;
+        }
+
+        // 2. Check Blank Waystone Scroll hint
+        if (plugin.getScrollManager().isBlankScroll(hand)) {
+            event.setCancelled(true);
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                    plugin.getConfigManager().getPrefix() + " &7This scroll is blank! Right-click any discovered Waypoint in person to attune it."));
+            return;
+        }
+
+        // 3. Check Guest Pass redemption anywhere!
         if (plugin.getLinkManager().isGuestPass(hand)) {
             event.setCancelled(true);
             plugin.getLinkManager().redeemGuestPass(player, hand);
             return;
         }
 
-        // Check Ledger linking near a waypoint
+        // 4. Check Ledger linking near a waypoint
         if (plugin.getLinkManager().isLedger(hand)) {
             Waypoint wp = plugin.getWaypointManager().getWaypointNear(player.getLocation(), 5.0);
             if (wp != null && wp.isOwner(player.getUniqueId())) {
