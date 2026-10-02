@@ -29,6 +29,30 @@ public class WaypointGUI {
     private final Map<UUID, UUID> pendingFeeChanges = new HashMap<>();
     private final Map<UUID, UUID> pendingCreates = new HashMap<>();
     private final Map<UUID, UUID> pendingTrusts = new HashMap<>();
+    private final Map<UUID, UUID> pendingSearches = new HashMap<>();
+
+    public void startPendingSearch(UUID playerId, UUID waypointId) {
+        pendingSearches.put(playerId, waypointId);
+    }
+
+    public boolean hasPendingSearch(UUID playerId) {
+        return pendingSearches.containsKey(playerId);
+    }
+
+    public void processSearch(Player player, String query) {
+        UUID wpId = pendingSearches.remove(player.getUniqueId());
+        if (wpId == null) return;
+        Waypoint wp = plugin.getWaypointManager().getWaypoint(wpId);
+        if (wp == null) return;
+
+        if (query.equalsIgnoreCase("cancel") || query.equalsIgnoreCase("clear")) {
+            player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &7Search cancelled."));
+            openTravelMenu(player, wp, 1, "ALL", null);
+        } else {
+            player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aSearching destinations for: &e\"" + query + "\""));
+            openTravelMenu(player, wp, 1, "ALL", query);
+        }
+    }
 
     public void startPendingCreate(UUID playerId, UUID waypointId) {
         pendingCreates.put(playerId, waypointId);
@@ -105,11 +129,19 @@ public class WaypointGUI {
         private final GUIType type;
         private final UUID waypointId;
         private int page;
+        private String filter = "ALL";
+        private String searchQuery = null;
 
         public WaypointGuiHolder(GUIType type, UUID waypointId, int page) {
+            this(type, waypointId, page, "ALL", null);
+        }
+
+        public WaypointGuiHolder(GUIType type, UUID waypointId, int page, String filter, String searchQuery) {
             this.type = type;
             this.waypointId = waypointId;
             this.page = page;
+            this.filter = filter != null ? filter : "ALL";
+            this.searchQuery = searchQuery;
         }
 
         @Override
@@ -119,6 +151,10 @@ public class WaypointGUI {
         public UUID getWaypointId() { return waypointId; }
         public int getPage() { return page; }
         public void setPage(int page) { this.page = page; }
+        public String getFilter() { return filter; }
+        public void setFilter(String filter) { this.filter = filter; }
+        public String getSearchQuery() { return searchQuery; }
+        public void setSearchQuery(String searchQuery) { this.searchQuery = searchQuery; }
     }
 
     public WaypointGUI(TirnueWaypoints plugin) {
@@ -215,94 +251,297 @@ public class WaypointGUI {
         return head;
     }
 
+    private ItemStack createFilterItem(Material mat, String name, boolean active, String... lore) {
+        ItemStack item = createItem(mat, name, lore);
+        if (active) {
+            item.addUnsafeEnchantment(org.bukkit.enchantments.Enchantment.UNBREAKING, 1);
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null) {
+                meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
+                item.setItemMeta(meta);
+            }
+        }
+        return item;
+    }
+
     private String c(String text) {
         return ChatColor.translateAlternateColorCodes('&', text);
     }
 
     public void openTravelMenu(Player player, Waypoint fromWaypoint) {
-        WaypointGuiHolder holder = new WaypointGuiHolder(GUIType.TRAVEL, fromWaypoint.getId(), 1);
+        openTravelMenu(player, fromWaypoint, 1, "ALL", null);
+    }
+
+    public void openTravelMenu(Player player, Waypoint fromWaypoint, int page, String filter, String searchQuery) {
+        String activeFilter = filter != null ? filter.toUpperCase() : "ALL";
+        WaypointGuiHolder holder = new WaypointGuiHolder(GUIType.TRAVEL, fromWaypoint.getId(), page, activeFilter, searchQuery);
         Inventory inv = Bukkit.createInventory(holder, 54, deserializeTitle("&5✦ Waypoint Travel"));
         holder.setInventory(inv);
-        
-        ItemStack border = createItem(Material.BLACK_STAINED_GLASS_PANE, " ");
-        for (int i = 0; i < 9; i++) inv.setItem(i, border);
-        inv.setItem(4, createItem(Material.COMPASS, "&5✦ Waypoint Travel", "&7Select a destination to warp"));
-        
-        for (int i = 45; i < 54; i++) inv.setItem(i, border);
-        if (fromWaypoint.isOwner(player.getUniqueId())) {
-            inv.setItem(45, createItem(Material.ARROW, "&7Back to Management", "&7Return to waypoint settings"));
-        }
-        inv.setItem(49, createItem(Material.BARRIER, "&cClose", "&7Exit menu"));
 
-        int slot = 9;
+        ItemStack border = createItem(Material.BLACK_STAINED_GLASS_PANE, " ");
+
+        // Top Filter Bar (Slots 0 to 8)
+        // Slot 0: All
+        inv.setItem(0, createFilterItem(Material.NETHER_STAR, (activeFilter.equals("ALL") ? "&b&l✦ All Destinations" : "&7✦ All Destinations"),
+                activeFilter.equals("ALL"),
+                "&7View all accessible waypoints.",
+                "&7Includes global & linked destinations.",
+                "",
+                (activeFilter.equals("ALL") ? "&a✔ Currently Active" : "&eClick to show all")));
+
+        // Slot 1: Favorites
+        inv.setItem(1, createFilterItem(Material.GOLD_INGOT, (activeFilter.equals("FAVORITES") ? "&6&l★ Favorites" : "&7★ Favorites"),
+                activeFilter.equals("FAVORITES"),
+                "&7View your bookmarked waypoints.",
+                "&7Shift-click any waypoint to favorite it!",
+                "",
+                (activeFilter.equals("FAVORITES") ? "&a✔ Currently Active" : "&eClick to filter favorites")));
+
+        // Slot 2: Global
+        inv.setItem(2, createFilterItem(Material.BEACON, (activeFilter.equals("GLOBAL") ? "&e&l🌐 Global / Events" : "&7🌐 Global / Events"),
+                activeFilter.equals("GLOBAL"),
+                "&7Server-wide public event hubs and",
+                "&7community landmarks.",
+                "",
+                (activeFilter.equals("GLOBAL") ? "&a✔ Currently Active" : "&eClick to filter global")));
+
+        // Slot 3: Linked
+        inv.setItem(3, createFilterItem(Material.ENDER_EYE, (activeFilter.equals("LINKED") ? "&d&l🔗 Linked Bases" : "&7🔗 Linked Bases"),
+                activeFilter.equals("LINKED"),
+                "&7Waypoints connected directly to this network",
+                "&7via Link Ledgers.",
+                "",
+                (activeFilter.equals("LINKED") ? "&a✔ Currently Active" : "&eClick to filter linked")));
+
+        // Slot 5: Nearest
+        inv.setItem(5, createFilterItem(Material.CLOCK, (activeFilter.equals("NEAREST") ? "&a&l📍 Nearest to Me" : "&7📍 Nearest to Me"),
+                activeFilter.equals("NEAREST"),
+                "&7Sorted by physical distance",
+                "&7to this waypoint.",
+                "",
+                (activeFilter.equals("NEAREST") ? "&a✔ Currently Active" : "&eClick to sort by nearest")));
+
+        // Slot 6: Search
+        inv.setItem(6, createItem(Material.SPYGLASS, "&e🔍 Search Destinations",
+                "&7Find destinations by name.",
+                (searchQuery != null ? "&7Active Query: &e\"" + searchQuery + "\"" : "&7No active search filter"),
+                "",
+                "&eClick to search in chat"));
+
+        // Slot 7: Clear search or border
+        if (searchQuery != null && !searchQuery.isEmpty()) {
+            inv.setItem(7, createItem(Material.BARRIER, "&c✖ Clear Search",
+                    "&7Active query: &e\"" + searchQuery + "\"",
+                    "",
+                    "&cClick to reset search"));
+        } else {
+            inv.setItem(7, border);
+        }
+
+        inv.setItem(8, border);
+
+        // Destination collection & filtering
         UUID pId = player.getUniqueId();
         List<Waypoint> globalWaypoints = plugin.getWaypointManager().getGlobalWaypoints();
-        for (Waypoint gWp : globalWaypoints) {
-            if (slot > 26) break;
-            if (gWp.getId().equals(fromWaypoint.getId())) continue;
-
-            double dist = fromWaypoint.distanceTo(gWp);
-            String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
-            double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, gWp);
-            inv.setItem(slot++, createWaypointItem(Material.BEACON, gWp, "&6✦ " + gWp.getName(), 
-                "&eGlobal Waypoint &7(Public/Event)",
-                "&7Distance: &f" + distStr, 
-                "&7Warp Time: &f" + String.format("%.1fs", time),
-                "",
-                "&eClick to warp"));
-        }
-
-        slot = 27;
-        List<Waypoint> linked = new ArrayList<>();
+        List<Waypoint> linkedWaypoints = new ArrayList<>();
         for (UUID lid : fromWaypoint.getLinkedWaypointIds()) {
-            Waypoint linkedWp = plugin.getWaypointManager().getWaypoint(lid);
-            if (linkedWp != null) linked.add(linkedWp);
+            Waypoint lWp = plugin.getWaypointManager().getWaypoint(lid);
+            if (lWp != null) linkedWaypoints.add(lWp);
         }
 
-        linked.sort((w1, w2) -> {
-            boolean f1 = plugin.getWaypointManager().isFavorite(pId, w1.getId());
-            boolean f2 = plugin.getWaypointManager().isFavorite(pId, w2.getId());
-            if (f1 && !f2) return -1;
-            if (!f1 && f2) return 1;
-            return w1.getName().compareToIgnoreCase(w2.getName());
-        });
-
-        if (linked.isEmpty() && globalWaypoints.isEmpty()) {
-            inv.setItem(31, createItem(Material.GRAY_STAINED_GLASS, "&7No destinations available"));
+        List<Waypoint> candidates = new ArrayList<>();
+        if ("GLOBAL".equals(activeFilter)) {
+            for (Waypoint g : globalWaypoints) {
+                if (!g.getId().equals(fromWaypoint.getId())) {
+                    candidates.add(g);
+                }
+            }
+        } else if ("LINKED".equals(activeFilter)) {
+            candidates.addAll(linkedWaypoints);
+        } else if ("FAVORITES".equals(activeFilter)) {
+            for (Waypoint g : globalWaypoints) {
+                if (!g.getId().equals(fromWaypoint.getId()) && plugin.getWaypointManager().isFavorite(pId, g.getId())) {
+                    candidates.add(g);
+                }
+            }
+            for (Waypoint l : linkedWaypoints) {
+                if (plugin.getWaypointManager().isFavorite(pId, l.getId()) && !candidates.contains(l)) {
+                    candidates.add(l);
+                }
+            }
         } else {
-            for (Waypoint lWp : linked) {
-                if (slot > 44) break;
-                boolean discovered = plugin.getWaypointManager().hasDiscovered(pId, lWp.getId())
-                        || lWp.isOwner(pId)
-                        || player.hasPermission("tirnue.waypoints.admin");
-
-                if (discovered) {
-                    double dist = fromWaypoint.distanceTo(lWp);
-                    String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
-                    double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, lWp);
-                    
-                    boolean isFav = plugin.getWaypointManager().isFavorite(pId, lWp.getId());
-                    String prefix = isFav ? "&6★ " : "&7☆ ";
-                    
-                    inv.setItem(slot++, createWaypointItem(Material.ENDER_EYE, lWp, prefix + "&d" + lWp.getName(),
-                        "&7Owner: &f" + lWp.getOwnerName(),
-                        "&7Distance: &f" + distStr,
-                        "&7Warp Time: &f" + String.format("%.1fs", time),
-                        "",
-                        "&eClick to warp | &7Shift-click to toggle favorite"));
-                } else {
-                    inv.setItem(slot++, createWaypointItem(Material.STRUCTURE_VOID, lWp, "&8??? &7(Undiscovered Link)",
-                        "&7Owner: &8Unknown",
-                        "&c✖ Not yet discovered!",
-                        "",
-                        "&7Explore the world to find and",
-                        "&7attune to this waypoint in person.",
-                        "",
-                        "&8(Locked until discovered)"));
+            // "ALL" or "NEAREST"
+            for (Waypoint g : globalWaypoints) {
+                if (!g.getId().equals(fromWaypoint.getId())) {
+                    candidates.add(g);
+                }
+            }
+            for (Waypoint l : linkedWaypoints) {
+                if (!candidates.contains(l)) {
+                    candidates.add(l);
                 }
             }
         }
-        
+
+        // Apply search query filter if set
+        if (searchQuery != null && !searchQuery.trim().isEmpty()) {
+            String q = searchQuery.trim().toLowerCase();
+            candidates.removeIf(w -> {
+                boolean canSeeName = w.isGlobal()
+                        || plugin.getWaypointManager().hasDiscovered(pId, w.getId())
+                        || w.isOwner(pId)
+                        || player.hasPermission("tirnue.waypoints.admin");
+                if (!canSeeName) return true;
+                return !w.getName().toLowerCase().contains(q);
+            });
+        }
+
+        // Sorting
+        if ("NEAREST".equals(activeFilter)) {
+            candidates.sort((w1, w2) -> {
+                double d1 = fromWaypoint.distanceTo(w1);
+                double d2 = fromWaypoint.distanceTo(w2);
+                if (d1 == -1 && d2 == -1) return w1.getName().compareToIgnoreCase(w2.getName());
+                if (d1 == -1) return 1;
+                if (d2 == -1) return -1;
+                return Double.compare(d1, d2);
+            });
+        } else {
+            candidates.sort((w1, w2) -> {
+                boolean f1 = plugin.getWaypointManager().isFavorite(pId, w1.getId());
+                boolean f2 = plugin.getWaypointManager().isFavorite(pId, w2.getId());
+                if (f1 && !f2) return -1;
+                if (!f1 && f2) return 1;
+                return w1.getName().compareToIgnoreCase(w2.getName());
+            });
+        }
+
+        int totalItems = candidates.size();
+        int totalPages = Math.max(1, (int) Math.ceil((double) totalItems / 36.0));
+        int currentPage = Math.max(1, Math.min(page, totalPages));
+        holder.setPage(currentPage);
+
+        // Slot 4: Info status
+        List<String> infoLore = new ArrayList<>();
+        infoLore.add("&7Origin: &f" + fromWaypoint.getName());
+        infoLore.add("&7Current Filter: &b" + activeFilter);
+        if (searchQuery != null && !searchQuery.isEmpty()) {
+            infoLore.add("&7Active Search: &e\"" + searchQuery + "\"");
+        }
+        infoLore.add("&7Total Destinations: &f" + totalItems);
+        infoLore.add("&7Page: &f" + currentPage + " &7/ &f" + totalPages);
+        inv.setItem(4, createItem(Material.COMPASS, "&5✦ Waypoint Travel", infoLore.toArray(new String[0])));
+
+        // Populate destination slots: 9 to 44 (36 items per page)
+        int startIndex = (currentPage - 1) * 36;
+        int endIndex = Math.min(startIndex + 36, totalItems);
+
+        if (totalItems == 0) {
+            if (searchQuery != null && !searchQuery.isEmpty()) {
+                inv.setItem(22, createItem(Material.BARRIER, "&cNo destinations found",
+                        "&7No waypoints matched: &e\"" + searchQuery + "\"",
+                        "&7Click slot 7 to clear filter."));
+            } else if ("FAVORITES".equals(activeFilter)) {
+                inv.setItem(22, createItem(Material.GOLD_INGOT, "&eNo Favorites Saved",
+                        "&7Shift-click any destination in the",
+                        "&7travel menu to bookmark it!"));
+            } else if ("LINKED".equals(activeFilter)) {
+                inv.setItem(22, createItem(Material.IRON_BARS, "&7No Linked Waypoints",
+                        "&7Use a Link Ledger to connect other",
+                        "&7waypoints to this network."));
+            } else {
+                inv.setItem(22, createItem(Material.GRAY_STAINED_GLASS, "&7No destinations available"));
+            }
+        } else {
+            for (int i = startIndex; i < endIndex; i++) {
+                Waypoint dest = candidates.get(i);
+                int destSlot = 9 + (i - startIndex);
+
+                boolean discovered = dest.isGlobal()
+                        || plugin.getWaypointManager().hasDiscovered(pId, dest.getId())
+                        || dest.isOwner(pId)
+                        || player.hasPermission("tirnue.waypoints.admin");
+
+                if (discovered) {
+                    double dist = fromWaypoint.distanceTo(dest);
+                    String distStr = dist == -1 ? "Different Dimension" : String.format("%.1f blocks", dist);
+                    double time = plugin.getTeleportManager().calculateWarmupSeconds(fromWaypoint, dest);
+                    boolean isFav = plugin.getWaypointManager().isFavorite(pId, dest.getId());
+                    String prefix = isFav ? "&6★ " : "&7☆ ";
+
+                    boolean isDepleted = plugin.getConfigManager().isDurabilityEnabled() && !dest.isGlobal() && dest.isDepleted();
+
+                    if (isDepleted) {
+                        inv.setItem(destSlot, createWaypointItem(Material.CRACKED_STONE_BRICKS, dest,
+                                prefix + "&c" + dest.getName() + " &4(DEPLETED)",
+                                "&7Owner: &f" + dest.getOwnerName(),
+                                "&7Distance: &f" + distStr,
+                                "&4✖ Depleted Integrity: 0 / " + dest.getMaxDurability(),
+                                "&cRequires owner repair before warps can arrive!",
+                                "",
+                                "&7Shift-click to toggle favorite"));
+                    } else if (dest.isGlobal()) {
+                        List<String> dLore = new ArrayList<>();
+                        dLore.add("&eGlobal Waypoint &7(Public/Event)");
+                        dLore.add("&7Distance: &f" + distStr);
+                        dLore.add("&7Warp Time: &f" + String.format("%.1fs", time));
+                        if (plugin.getConfigManager().isDurabilityEnabled()) {
+                            dLore.add("&7Integrity: &a∞ Infinite (Global)");
+                        }
+                        dLore.add("");
+                        dLore.add("&eClick to warp | &7Shift-click to favorite");
+
+                        inv.setItem(destSlot, createWaypointItem(Material.BEACON, dest,
+                                prefix + "&6✦ " + dest.getName(), dLore.toArray(new String[0])));
+                    } else {
+                        List<String> dLore = new ArrayList<>();
+                        dLore.add("&7Owner: &f" + dest.getOwnerName());
+                        dLore.add("&7Distance: &f" + distStr);
+                        dLore.add("&7Warp Time: &f" + String.format("%.1fs", time));
+                        if (plugin.getConfigManager().isDurabilityEnabled()) {
+                            dLore.add("&7Integrity: &a" + dest.getDurability() + "&7/&a" + dest.getMaxDurability());
+                        }
+                        if (dest.getUsageFee() > 0 && !dest.isOwner(pId)) {
+                            dLore.add("&6Usage Fee: &a$" + String.format("%.2f", dest.getUsageFee()));
+                        }
+                        dLore.add("");
+                        dLore.add("&eClick to warp | &7Shift-click to favorite");
+
+                        inv.setItem(destSlot, createWaypointItem(Material.ENDER_EYE, dest,
+                                prefix + "&d" + dest.getName(), dLore.toArray(new String[0])));
+                    }
+                } else {
+                    inv.setItem(destSlot, createWaypointItem(Material.STRUCTURE_VOID, dest,
+                            "&8??? &7(Undiscovered Link)",
+                            "&7Owner: &8Unknown",
+                            "&c✖ Not yet discovered!",
+                            "",
+                            "&7Explore the world to find and",
+                            "&7attune to this waypoint in person.",
+                            "",
+                            "&8(Locked until discovered)"));
+                }
+            }
+        }
+
+        // Bottom Navigation Bar (Slots 45 to 53)
+        for (int i = 45; i < 54; i++) inv.setItem(i, border);
+
+        // Slot 45: Previous Page or Back to Management
+        if (currentPage > 1) {
+            inv.setItem(45, createItem(Material.ARROW, "&a« Previous Page", "&7Go to page " + (currentPage - 1)));
+        } else if (fromWaypoint.isOwner(player.getUniqueId())) {
+            inv.setItem(45, createItem(Material.ARROW, "&7Back to Management", "&7Return to waypoint settings"));
+        }
+
+        // Slot 49: Close
+        inv.setItem(49, createItem(Material.BARRIER, "&cClose", "&7Exit menu"));
+
+        // Slot 53: Next Page
+        if (currentPage < totalPages) {
+            inv.setItem(53, createItem(Material.ARROW, "&aNext Page »", "&7Go to page " + (currentPage + 1)));
+        }
+
         player.openInventory(inv);
     }
 
@@ -329,6 +568,49 @@ public class WaypointGUI {
         inv.setItem(19, createItem(Material.WRITABLE_BOOK, "&d✉ Link Ledger", "&7Generate a linking code"));
         inv.setItem(20, createItem(Material.MAP, "&d✦ Inscribe Warp Scroll", "&7Create a single-use scroll", "&7bound to this waypoint.", "", "&7Cost: &f1 Blank Scroll", "&7(or &f1 Pearl + 1 Paper&7)", "", "&eClick to inscribe"));
         inv.setItem(21, createItem(Material.PAPER, "&e✦ Guest Pass", "&7Create single-use pass"));
+
+        // Slot 22: Structural Integrity & Durability Repair
+        if (plugin.getConfigManager().isDurabilityEnabled()) {
+            int curDur = wp.getDurability();
+            int maxDur = wp.getMaxDurability();
+            double ratio = (double) curDur / (double) maxDur;
+            int greenBars = (int) Math.round(ratio * 20);
+            if (greenBars > 20) greenBars = 20;
+            if (greenBars < 0) greenBars = 0;
+            int redBars = 20 - greenBars;
+            String bar = "&a" + "|".repeat(greenBars) + "&8" + "|".repeat(redBars);
+
+            List<String> durLore = new ArrayList<>();
+            durLore.add("&7Structural Integrity:");
+            durLore.add(" " + bar + " &f" + curDur + "&7/&f" + maxDur + " &7(" + (int)(ratio * 100) + "%)");
+            durLore.add("");
+            if (wp.isGlobal()) {
+                durLore.add("&a✔ Infinite Durability (Global)");
+                durLore.add("&7No repairs required.");
+            } else if (curDur >= maxDur) {
+                durLore.add("&a✔ Fully Maintained");
+                durLore.add("&7Integrity is at maximum capacity.");
+            } else {
+                int missing = maxDur - curDur;
+                double costPerPt = plugin.getConfigManager().getDurabilityCostPerPoint();
+                double totalCost = missing * costPerPt;
+                if (wp.isDepleted()) {
+                    durLore.add("&4✖ STATUS: DEPLETED (WARPS DISABLED)");
+                } else if (ratio <= 0.25) {
+                    durLore.add("&c⚠ STATUS: CRITICAL DAMAGE");
+                } else {
+                    durLore.add("&e⚠ STATUS: WEAKENED");
+                }
+                durLore.add("&7Missing: &e" + missing + " pts");
+                durLore.add("&7Repair Cost: &a$" + String.format("%.2f", totalCost) + " &7(Vault)");
+                durLore.add("&7Cost per point: &f$" + String.format("%.2f", costPerPt));
+                durLore.add("");
+                durLore.add("&eClick to repair & restore 100% integrity");
+            }
+
+            inv.setItem(22, createItem(Material.SMITHING_TABLE, "&6✦ Structural Integrity & Repair", durLore.toArray(new String[0])));
+        }
+
         inv.setItem(23, createItem(Material.PAINTING, "&d✿ Customize", "&7Particles & crystal"));
         
         String tier = wp.getTier();
@@ -636,14 +918,60 @@ public class WaypointGUI {
 
         switch (holder.getType()) {
             case TRAVEL:
+                // Category Filter clicks (Row 1)
+                if (slot == 0) {
+                    openTravelMenu(player, wp, 1, "ALL", holder.getSearchQuery());
+                    return;
+                }
+                if (slot == 1) {
+                    openTravelMenu(player, wp, 1, "FAVORITES", holder.getSearchQuery());
+                    return;
+                }
+                if (slot == 2) {
+                    openTravelMenu(player, wp, 1, "GLOBAL", holder.getSearchQuery());
+                    return;
+                }
+                if (slot == 3) {
+                    openTravelMenu(player, wp, 1, "LINKED", holder.getSearchQuery());
+                    return;
+                }
+                if (slot == 5) {
+                    openTravelMenu(player, wp, 1, "NEAREST", holder.getSearchQuery());
+                    return;
+                }
+                if (slot == 6) { // Search
+                    player.closeInventory();
+                    startPendingSearch(player.getUniqueId(), wp.getId());
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &e✦ Type destination search keyword in chat &7(or 'clear' / 'cancel'):"));
+                    return;
+                }
+                if (slot == 7) { // Clear search
+                    if (holder.getSearchQuery() != null && !holder.getSearchQuery().isEmpty()) {
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &7Search filter cleared."));
+                        openTravelMenu(player, wp, 1, holder.getFilter(), null);
+                    }
+                    return;
+                }
+
+                // Bottom row clicks (Row 6)
+                if (slot == 45) {
+                    if (holder.getPage() > 1) {
+                        openTravelMenu(player, wp, holder.getPage() - 1, holder.getFilter(), holder.getSearchQuery());
+                    } else if (wp.isOwner(player.getUniqueId())) {
+                        openManagementMenu(player, wp);
+                    }
+                    return;
+                }
                 if (slot == 49) {
                     player.closeInventory();
                     return;
                 }
-                if (slot == 45 && wp.isOwner(player.getUniqueId())) {
-                    openManagementMenu(player, wp);
+                if (slot == 53 && clicked.getType() == Material.ARROW) {
+                    openTravelMenu(player, wp, holder.getPage() + 1, holder.getFilter(), holder.getSearchQuery());
                     return;
                 }
+
+                // Destination item clicks (Slots 9 to 44)
                 if (clicked.hasItemMeta()) {
                     String targetIdStr = clicked.getItemMeta().getPersistentDataContainer().get(KEY_TARGET_WP, PersistentDataType.STRING);
                     if (targetIdStr != null) {
@@ -663,11 +991,18 @@ public class WaypointGUI {
 
                                 if (event.isShiftClick()) {
                                     plugin.getWaypointManager().toggleFavorite(player.getUniqueId(), dest.getId());
-                                    openTravelMenu(player, wp);
-                                } else {
-                                    player.closeInventory();
-                                    plugin.getTeleportManager().startTeleport(player, wp, dest);
+                                    openTravelMenu(player, wp, holder.getPage(), holder.getFilter(), holder.getSearchQuery());
+                                    return;
                                 }
+
+                                if (plugin.getConfigManager().isDurabilityEnabled() && !dest.isGlobal() && dest.isDepleted()) {
+                                    player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 0.6f);
+                                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cDestination waypoint '" + dest.getName() + "' is structurally depleted and cannot receive warps until repaired!"));
+                                    return;
+                                }
+
+                                player.closeInventory();
+                                plugin.getTeleportManager().startTeleport(player, wp, dest);
                             }
                         } catch (IllegalArgumentException ignored) {}
                     }
@@ -727,6 +1062,42 @@ public class WaypointGUI {
                     ItemStack pass = plugin.getLinkManager().generateGuestPass(wp);
                     player.getInventory().addItem(pass);
                     player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aGuest pass generated."));
+                } else if (slot == 22) { // Durability Repair via Vault
+                    if (!plugin.getConfigManager().isDurabilityEnabled()) return;
+                    if (wp.isGlobal()) {
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aGlobal waypoints possess infinite structural integrity!"));
+                        return;
+                    }
+                    int curDur = wp.getDurability();
+                    int maxDur = wp.getMaxDurability();
+                    if (curDur >= maxDur) {
+                        player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+                        player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &aThis waypoint is already at 100% integrity! No repairs needed."));
+                        return;
+                    }
+
+                    int missing = maxDur - curDur;
+                    double costPerPt = plugin.getConfigManager().getDurabilityCostPerPoint();
+                    double totalCost = missing * costPerPt;
+
+                    net.milkbowl.vault.economy.Economy econ = plugin.getEconomy();
+                    if (econ != null && totalCost > 0) {
+                        if (!econ.has(player, totalCost)) {
+                            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.7f);
+                            player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &cInsufficient funds to repair! You need &a$" + String.format("%.2f", totalCost) + "&c, but only have &a$" + String.format("%.2f", econ.getBalance(player)) + "&c."));
+                            return;
+                        }
+                        econ.withdrawPlayer(player, totalCost);
+                    }
+
+                    wp.repairDurability(missing);
+                    plugin.getWaypointManager().saveAsync();
+
+                    player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.2f);
+                    player.playSound(player.getLocation(), Sound.BLOCK_SMITHING_TABLE_USE, 1.0f, 1.0f);
+                    player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8f, 1.5f);
+                    player.sendMessage(c(plugin.getConfigManager().getPrefix() + " &a✦ Repaired &e" + wp.getName() + " &ato 100% structural integrity! Cost: &a$" + String.format("%.2f", totalCost)));
+                    openManagementMenu(player, wp);
                 } else if (slot == 23) { // Customize Appearance
                     openCustomizeMenu(player, wp);
                 } else if (slot == 25) { // Upgrade
@@ -917,5 +1288,6 @@ public class WaypointGUI {
         pendingFeeChanges.remove(playerId);
         pendingCreates.remove(playerId);
         pendingTrusts.remove(playerId);
+        pendingSearches.remove(playerId);
     }
 }

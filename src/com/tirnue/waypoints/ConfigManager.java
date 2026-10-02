@@ -255,6 +255,24 @@ public class ConfigManager {
         return config.getString("scrolls.attuned-name", "&d✦ Waystone Scroll: &f{destination}");
     }
 
+    // --- Durability ---
+    public boolean isDurabilityEnabled() {
+        return config.getBoolean("durability.enabled", true);
+    }
+
+    public int getDurabilityLossPerTeleport() {
+        return config.getInt("durability.loss-per-teleport", 1);
+    }
+
+    public double getDurabilityCostPerPoint() {
+        return config.getDouble("durability.vault-cost-per-point", 5.0);
+    }
+
+    public int getMaxDurabilityForTier(String tier) {
+        if (tier == null) return 100;
+        return config.getInt("durability.max-durability." + tier.toLowerCase(), 100);
+    }
+
     // --- Helpers ---
     private String c(String s) {
         if (s == null) return "";

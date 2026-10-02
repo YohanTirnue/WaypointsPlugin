@@ -53,6 +53,19 @@ public class TeleportManager {
             return false;
         }
 
+        if (config.isDurabilityEnabled()) {
+            if (from != null && from.isDepleted()) {
+                player.sendMessage(config.getPrefix() + ChatColor.RED + "This waypoint is depleted! Repair it in the management menu before warping.");
+                player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 0.6f);
+                return false;
+            }
+            if (to.isDepleted()) {
+                player.sendMessage(config.getPrefix() + ChatColor.RED + "Destination waypoint '" + to.getName() + "' is depleted and cannot receive travelers!");
+                player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 0.6f);
+                return false;
+            }
+        }
+
         double cost = 0;
         boolean free = to.isGlobal() && config.isGlobalWaypointsFree();
         if (config.isCostEnabled() && !free) {
@@ -229,6 +242,12 @@ public class TeleportManager {
 
         if (isOnCooldown(pid)) {
             player.sendMessage(config.getPrefix() + config.getMessage("teleport-cooldown").replace("{seconds}", String.valueOf(getCooldownRemaining(pid))));
+            return false;
+        }
+
+        if (config.isDurabilityEnabled() && to.isDepleted()) {
+            player.sendMessage(config.getPrefix() + ChatColor.RED + "The destination waypoint '" + to.getName() + "' is depleted and cannot receive travelers!");
+            player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 0.6f);
             return false;
         }
 
@@ -437,6 +456,18 @@ public class TeleportManager {
             teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_TO", teleport.from.getName());
         } else {
             teleport.to.addActivity(player.getName(), player.getUniqueId(), "WARP_SCROLL", "Wilderness");
+        }
+
+        // 4b. Durability degradation
+        if (config.isDurabilityEnabled()) {
+            int loss = config.getDurabilityLossPerTeleport();
+            if (teleport.from != null && !teleport.from.isGlobal()) {
+                teleport.from.damageDurability(loss);
+            }
+            if (!teleport.to.isGlobal()) {
+                teleport.to.damageDurability(loss);
+            }
+            plugin.getWaypointManager().saveAsync();
         }
 
         // 5. BOOM particles & sound everywhere after teleporting!

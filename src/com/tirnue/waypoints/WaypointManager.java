@@ -45,6 +45,9 @@ public class WaypointManager {
                 new HashSet<>(),
                 System.currentTimeMillis()
         );
+        int maxDur = configManager.getMaxDurabilityForTier("BASIC");
+        waypoint.setMaxDurability(maxDur);
+        waypoint.setDurability(maxDur);
         waypoints.put(waypoint.getId(), waypoint);
         saveAsync();
         return waypoint;
@@ -247,6 +250,8 @@ public class WaypointManager {
             yaml.set(key + ".crystalMaterial", wp.getCrystalMaterial());
             yaml.set(key + ".tier", wp.getTier());
             yaml.set(key + ".usageFee", wp.getUsageFee());
+            yaml.set(key + ".durability", wp.getDurability());
+            yaml.set(key + ".maxDurability", wp.getMaxDurability());
             yaml.set(key + ".decaying", wp.isDecaying());
             yaml.set(key + ".decayStartTime", wp.getDecayStartTime());
             List<String> trusted = new ArrayList<>();
@@ -315,6 +320,10 @@ public class WaypointManager {
                 wp.setCrystalMaterial(crystalMaterial);
                 wp.setTier(tier);
                 wp.setUsageFee(usageFee);
+                int maxDur = yaml.getInt(key + ".maxDurability", configManager.getMaxDurabilityForTier(tier));
+                int dur = yaml.getInt(key + ".durability", maxDur);
+                wp.setMaxDurability(maxDur);
+                wp.setDurability(dur);
                 wp.setDecaying(decaying);
                 wp.setDecayStartTime(decayStartTime);
                 

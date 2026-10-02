@@ -30,6 +30,8 @@ public class Waypoint {
     private String crystalMaterial = "END_CRYSTAL";
     private String tier = "BASIC";
     private double usageFee = 0.0;
+    private int durability = 100;
+    private int maxDurability = 100;
     private final List<ActivityEntry> activityLog = new ArrayList<>();
 
     public static class ActivityEntry {
@@ -199,5 +201,19 @@ public class Waypoint {
 
     public List<ActivityEntry> getActivityLog() {
         return activityLog;
+    }
+
+    public int getDurability() { return durability; }
+    public void setDurability(int durability) { this.durability = Math.max(0, Math.min(durability, maxDurability)); }
+    public int getMaxDurability() { return maxDurability; }
+    public void setMaxDurability(int maxDurability) { this.maxDurability = Math.max(1, maxDurability); }
+    public boolean isDepleted() { return !isGlobal && durability <= 0; }
+    public void damageDurability(int amount) {
+        if (!isGlobal) {
+            this.durability = Math.max(0, this.durability - amount);
+        }
+    }
+    public void repairDurability(int amount) {
+        this.durability = Math.min(this.maxDurability, this.durability + amount);
     }
 }

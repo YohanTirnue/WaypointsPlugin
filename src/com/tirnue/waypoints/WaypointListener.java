@@ -319,6 +319,15 @@ public class WaypointListener implements Listener {
             });
             return;
         }
+        // Handle search query input
+        if (plugin.getWaypointGUI().hasPendingSearch(player.getUniqueId())) {
+            event.setCancelled(true);
+            String input = PlainTextComponentSerializer.plainText().serialize(event.message());
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                plugin.getWaypointGUI().processSearch(player, input);
+            });
+            return;
+        }
         // Handle rename input
         if (plugin.getWaypointGUI().hasPendingRename(player.getUniqueId())) {
             event.setCancelled(true);

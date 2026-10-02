@@ -238,3 +238,19 @@ world-restrictions:
   # Block links between these world pairs
   blocked-pairs:
     - "aeternum_frost:aeternum_heat"
+
+# ------------------------------------------
+# Waypoint Durability & Vault Repair
+# ------------------------------------------
+durability:
+  # Enable waypoint durability degradation and maintenance
+  enabled: true
+  # Default max durability per tier
+  max-durability:
+    basic: 100
+    advanced: 250
+    master: 500
+  # Durability lost per teleport
+  loss-per-teleport: 1
+  # Cost in Vault currency to repair 1 point of durability
+  vault-cost-per-point: 5.0
